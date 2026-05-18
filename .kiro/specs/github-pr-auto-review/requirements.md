@@ -47,6 +47,7 @@ The GitHub PR Auto-Review tool is a developer tool that integrates with GitHub t
 11. WHEN an Installation_Access_Token is within 5 minutes of expiry during job processing, THE PR_Reviewer SHALL refresh it before making the next API call.
 12. IF a job fails processing, THEN THE PR_Reviewer SHALL retry it up to 3 times before moving it to the dead-letter queue.
 13. WHEN a job is moved to the dead-letter queue after exhausting retries, THE PR_Reviewer SHALL post a top-level PR comment notifying the pull request author that automated review failed.
+14. WHEN a webhook event is received for a pull request in draft state, THE PR_Reviewer SHALL skip processing unless the Config field `review_draft_prs` is set to true.
 
 ---
 
@@ -60,9 +61,10 @@ The GitHub PR Auto-Review tool is a developer tool that integrates with GitHub t
 2. THE Diff_Parser SHALL preserve the GitHub pull request line position index for each changed line, enabling accurate comment placement via the GitHub API.
 3. THE Diff_Parser SHALL skip files matching a default ignore list including: `package-lock.json`, `yarn.lock`, `*.lock`, `vendor/**`, `generated/**`, `*.pb.go`, `*.min.js`, and `*.min.css`.
 4. WHERE a Config file is present, THE PR_Reviewer SHALL apply the `ignore_patterns_extend` field (a list of glob patterns added to the default ignore list) and the `ignore_patterns_override` field (a list of glob patterns that fully replaces the default ignore list when present) to control which files are skipped.
-5. IF a diff contains binary files, THEN THE Diff_Parser SHALL skip those files and record them in a skipped-files list.
-6. IF a diff exceeds 3,000 changed lines, THEN THE Diff_Parser SHALL truncate to the first 3,000 changed lines and include a truncation notice in the structured output.
-7. FOR ALL parsed diffs, the line position assigned to each changed line SHALL match the position index reported by the GitHub pull request diff API for that line.
+5. IF both `ignore_patterns_override` and `ignore_patterns_extend` are present in the Config, THEN `ignore_patterns_override` SHALL take precedence, `ignore_patterns_extend` SHALL be ignored, and THE PR_Reviewer SHALL log a warning about the conflicting fields.
+6. IF a diff contains binary files, THEN THE Diff_Parser SHALL skip those files and record them in a skipped-files list.
+7. IF a diff exceeds 3,000 changed lines, THEN THE Diff_Parser SHALL truncate to the first 3,000 changed lines and include a truncation notice in the structured output.
+8. FOR ALL parsed diffs, the line position assigned to each changed line SHALL match the position index reported by the GitHub pull request diff API for that line.
 
 ---
 
@@ -75,12 +77,12 @@ The GitHub PR Auto-Review tool is a developer tool that integrates with GitHub t
 1. THE Review_Engine SHALL analyze each structured diff against four Review_Categories: bugs, security, style, and performance.
 2. THE Review_Engine SHALL use OpenAI GPT-4o as the primary LLM provider, and the Review_Engine interface SHALL be designed to be provider-pluggable to allow substitution of other LLM providers.
 3. THE Review_Engine SHALL use a separate prompt template for each Review_Category.
-4. BEFORE sending diff content to the LLM provider, THE Review_Engine SHALL scan the diff for lines matching known secret patterns using a secret-detection library (e.g., detect-secrets) and redact any matched lines, replacing them with a placeholder indicating redaction.
+4. BEFORE sending diff content to the LLM provider for ANY Review_Category, THE Review_Engine SHALL scan the diff using the Secret_Scrubber and redact lines matching known secret patterns. THE PR_Reviewer SHALL treat Secret_Scrubber detections as the authoritative signal for committed secrets; the security Review_Category SHALL NOT be expected to produce Findings for lines that have been redacted.
 5. WHEN the Review_Engine processes a diff, THE Review_Engine SHALL produce zero or more Findings per Review_Category.
 6. WHEN a Finding is produced, THE Review_Engine SHALL assign it exactly one Review_Category.
 7. WHEN a Finding is produced, THE Review_Engine SHALL include the file path, line number, a plain-English explanation of at least one sentence, and a severity level of low, medium, or high.
 8. WHEN a diff exceeds a configurable token threshold, THE Review_Engine SHALL split the diff into chunks and analyze each chunk independently per Review_Category, then deduplicate Findings from multiple chunks by file path and line number before posting.
-9. IF the LLM provider returns an error or timeout after 30 seconds, THEN THE Review_Engine SHALL retry the request once using OpenAI's retry guidelines, and IF the retry fails, THEN THE Review_Engine SHALL record the failure and skip that Review_Category for the current diff.
+9. IF the LLM provider returns an error or timeout after 30 seconds, THEN THE Review_Engine SHALL retry the request once after a 1-second delay using exponential backoff, and IF the retry fails, THEN THE Review_Engine SHALL record the failure and skip that Review_Category for the current diff.
 
 ---
 
@@ -113,6 +115,8 @@ The GitHub PR Auto-Review tool is a developer tool that integrates with GitHub t
 6. WHEN no Findings are produced for a pull request, THE Comment_Poster SHALL post a single top-level review comment stating that no issues were found, with status `COMMENT`.
 7. WHERE the Config field `auto_approve_on_no_findings` is set to `true`, THE Comment_Poster SHALL submit the review with status `APPROVE` instead of `COMMENT` when no Findings are produced.
 8. IF the GitHub Reviews API returns a 422 error for a specific comment, THEN THE Comment_Poster SHALL skip that comment, log the invalid line reference, and continue posting remaining comments.
+9. WHEN THE Comment_Poster submits a review, THE Comment_Poster SHALL populate the top-level review body with a summary in the format: 'Found N issue(s) across M category/categories.' WHEN no Findings are produced, the body SHALL read: 'No issues found.'
+10. BEFORE posting a review, THE Comment_Poster SHALL retrieve all existing review comments on the pull request from the GitHub API and use them to skip any Finding whose file path and line position already has a comment from a prior bot review.
 
 ---
 
@@ -148,6 +152,7 @@ enabled_categories: [bugs, security, style, performance]  # list of Review_Categ
 min_severity: low        # low | medium | high; default is low (all findings posted)
 auto_approve_on_no_findings: false  # bool; when true, post APPROVE instead of COMMENT on clean PRs
 token_threshold: 6000    # int; max tokens per LLM chunk before splitting
+review_draft_prs: false  # bool; when false, draft PRs are skipped
 ignore_patterns_extend:
   - "vendor/**"          # list of glob patterns ADDED to the default ignore list
   - "*.min.js"
