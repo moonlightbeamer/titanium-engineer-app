@@ -2,13 +2,16 @@
 
 ## Introduction
 
-The GitHub PR Auto-Review tool is a developer tool that integrates with GitHub to automatically perform first-pass code reviews on pull requests. It identifies bugs, security anti-patterns, style issues, and performance problems, then posts line-level review comments as a bot reviewer — including corrected code suggestions with plain-English explanations. The goal is to reduce senior engineer review burden and shorten feedback cycles for junior developers.
+The GitHub PR Auto-Review tool is a developer tool that integrates with GitHub to automatically perform first-pass code reviews on pull requests. The tool is built around an LLM agent that reasons iteratively over PR diffs, fetching additional file context on demand before producing findings, rather than applying fixed prompt templates in a static pipeline. It identifies bugs, security anti-patterns, style issues, and performance problems, then posts line-level review comments as a bot reviewer — including corrected code suggestions with plain-English explanations. The goal is to reduce senior engineer review burden and shorten feedback cycles for junior developers.
 
 ## Glossary
 
 - **PR_Reviewer**: The automated bot system that reads PR diffs and posts review comments to GitHub.
 - **Diff_Parser**: The component responsible for parsing raw GitHub PR diffs into structured, line-addressable format.
-- **Review_Engine**: The LLM-backed component that analyzes structured diff data and produces categorized review findings.
+- **Review_Engine**: The LLM-backed component, now implemented as Review_Agent, that analyzes structured diff data by reasoning iteratively and invoking Agent_Tools to gather context before producing categorized Findings.
+- **Review_Agent**: The LLM agent that orchestrates PR review by reasoning over diff content, invoking tools to gather additional context, and producing categorized Findings. Replaces the static Review_Engine pipeline.
+- **Tool_Budget**: The maximum number of tool calls the Review_Agent is permitted to make per PR review job, used to bound cost and latency.
+- **Agent_Tool**: A discrete capability the Review_Agent can invoke during reasoning, such as fetching a full file, listing directory contents, or querying call sites of a modified function.
 - **Comment_Poster**: The component that formats findings and posts them as review comments to the GitHub API.
 - **Finding**: A single identified issue in the diff, including category, line reference, explanation, and optional code suggestion.
 - **Review_Category**: One of four analysis dimensions: bugs, security, style, or performance.
@@ -74,15 +77,23 @@ The GitHub PR Auto-Review tool is a developer tool that integrates with GitHub t
 
 #### Acceptance Criteria
 
-1. THE Review_Engine SHALL analyze each structured diff against four Review_Categories: bugs, security, style, and performance.
-2. THE Review_Engine SHALL use OpenAI GPT-4o as the primary LLM provider, and the Review_Engine interface SHALL be designed to be provider-pluggable to allow substitution of other LLM providers.
-3. THE Review_Engine SHALL use a separate prompt template for each Review_Category.
-4. BEFORE sending diff content to the LLM provider for ANY Review_Category, THE Review_Engine SHALL scan the diff using the Secret_Scrubber and redact lines matching known secret patterns. THE PR_Reviewer SHALL treat Secret_Scrubber detections as the authoritative signal for committed secrets; the security Review_Category SHALL NOT be expected to produce Findings for lines that have been redacted.
-5. WHEN the Review_Engine processes a diff, THE Review_Engine SHALL produce zero or more Findings per Review_Category.
-6. WHEN a Finding is produced, THE Review_Engine SHALL assign it exactly one Review_Category.
-7. WHEN a Finding is produced, THE Review_Engine SHALL include the file path, line number, a plain-English explanation of at least one sentence, and a severity level of low, medium, or high.
-8. WHEN a diff exceeds a configurable token threshold, THE Review_Engine SHALL split the diff into chunks and analyze each chunk independently per Review_Category, then deduplicate Findings from multiple chunks by file path and line number before posting.
-9. IF the LLM provider returns an error or timeout after 30 seconds, THEN THE Review_Engine SHALL retry the request once after a 1-second delay, and IF the retry fails, THEN THE Review_Engine SHALL record the failure and skip that Review_Category for the current diff.
+1. THE Review_Agent SHALL use OpenAI GPT-4o as the primary LLM provider, and the Review_Agent interface SHALL be designed to be provider-pluggable to allow substitution of other LLM providers.
+2. THE Review_Agent SHALL have access to the following Agent_Tools during a review job:
+   - `fetch_file_content(path, ref)`: retrieves the full content of a file at a given git ref from the repository
+   - `fetch_pr_diff(pr_number)`: retrieves the structured diff for the pull request (already parsed by Diff_Parser)
+   - `search_file(path, pattern)`: searches a file for lines matching a regex pattern
+   - `list_directory(path, ref)`: lists files in a directory at a given git ref
+   - `get_symbol_usages(symbol, path)`: returns lines in a file where a given symbol is referenced
+3. THE Review_Agent SHALL reason iteratively — it MAY invoke Agent_Tools to gather additional context before deciding whether to produce a Finding, rather than classifying based solely on the diff.
+4. THE Review_Agent SHALL NOT exceed a configurable Tool_Budget of tool calls per PR review job. WHERE a Config file is absent, the default Tool_Budget SHALL be 20 tool calls per job.
+5. WHEN the Review_Agent reaches the Tool_Budget limit, it SHALL finalize its current Findings and proceed to posting without further tool calls, logging that the budget was reached.
+6. BEFORE invoking any Agent_Tool that fetches file content, THE Review_Agent SHALL pass the fetched content through the Secret_Scrubber before including it in the agent context.
+7. THE Review_Agent SHALL analyze the diff across four Review_Categories: bugs, security, style, and performance. The agent MAY interleave reasoning across categories rather than processing them sequentially.
+8. WHEN a Finding is produced, THE Review_Agent SHALL assign it exactly one Review_Category, include the file path, line number, a plain-English explanation of at least one sentence, and a severity level of low, medium, or high.
+9. THE Review_Agent SHALL include a confidence score (low, medium, high) with each Finding. WHEN confidence is low, THE Review_Agent SHOULD attempt one additional tool call to verify before finalizing the Finding, subject to the Tool_Budget.
+10. BEFORE sending any diff or file content to the LLM provider, THE Review_Agent SHALL pass it through the Secret_Scrubber and redact lines matching known secret patterns. THE PR_Reviewer SHALL treat Secret_Scrubber detections as the authoritative signal for committed secrets; the security Review_Category SHALL NOT be expected to produce Findings for lines that have been redacted.
+11. IF the LLM provider returns an error or timeout after 30 seconds, THEN THE Review_Agent SHALL retry the request once after a 1-second delay, and IF the retry fails, THEN THE Review_Agent SHALL record the failure, finalize any Findings produced so far, and proceed to posting.
+12. THE Review_Agent SHALL NOT chunk diffs mechanically by token count. Instead, THE Review_Agent SHALL use fetch_file_content and related Agent_Tools to retrieve additional context on demand, bounded by the Tool_Budget.
 
 ---
 
@@ -142,7 +153,7 @@ The GitHub PR Auto-Review tool is a developer tool that integrates with GitHub t
 
 1. THE PR_Reviewer SHALL read a Config file from the path `.github/pr-auto-review.yml` in the target repository when processing a pull request.
 2. WHERE a Config file is present, THE PR_Reviewer SHALL enable only the Review_Categories listed in the `enabled_categories` field.
-3. WHERE a Config file is absent, THE PR_Reviewer SHALL enable all four Review_Categories with a default min_severity of low (all findings posted) and a default token_threshold of 6000.
+3. WHERE a Config file is absent, THE PR_Reviewer SHALL enable all four Review_Categories with a default min_severity of low and a default Tool_Budget of 20 tool calls per job.
 4. WHERE a Config file is present, THE PR_Reviewer SHALL apply the `min_severity` field to suppress Findings below the specified severity level before posting.
 5. IF the Config file contains invalid YAML or unrecognized fields, THEN THE PR_Reviewer SHALL log a warning, ignore the invalid Config, and apply default settings.
 6. THE Config file SHALL support the following fields and types:
@@ -151,7 +162,7 @@ The GitHub PR Auto-Review tool is a developer tool that integrates with GitHub t
 enabled_categories: [bugs, security, style, performance]  # list of Review_Category values
 min_severity: low        # low | medium | high; default is low (all findings posted)
 auto_approve_on_no_findings: false  # bool; when true, post APPROVE instead of COMMENT on clean PRs
-token_threshold: 6000    # int; max tokens per LLM chunk before splitting
+tool_budget: 20          # int; max Agent_Tool calls per review job
 review_draft_prs: false  # bool; when false, draft PRs are skipped
 ignore_patterns_extend:
   - "vendor/**"          # list of glob patterns ADDED to the default ignore list
@@ -171,5 +182,6 @@ ignore_patterns_override:
 
 1. THE PR_Reviewer SHALL use an async Job_Queue to decouple webhook receipt from review processing.
 2. THE PR_Reviewer SHALL acknowledge webhook events within 3 seconds of receipt.
-3. THE PR_Reviewer SHALL post a completed review within 5 minutes of receiving the webhook event with no more than 10 concurrent review jobs in the queue.
+3. THE PR_Reviewer SHALL post a completed review within 10 minutes of receiving the webhook event with no more than 10 concurrent review jobs in the queue.
 4. THE Evaluation_Harness SHALL measure and report end-to-end review latency per run, enforcing the condition of no more than 10 concurrent review jobs during latency measurement.
+5. THE Evaluation_Harness SHALL report average Tool_Budget consumption per review job alongside latency metrics.
