@@ -16,6 +16,9 @@ The GitHub PR Auto-Review tool is a developer tool that integrates with GitHub t
 - **Evaluation_Harness**: The test suite used to measure false positive rates and review quality.
 - **False_Positive**: A Finding flagged as a security issue that is not actually a security vulnerability.
 - **Config**: The per-repository configuration file that controls PR_Reviewer behavior.
+- **Installation_Access_Token**: A scoped, short-lived token (valid for 1 hour) issued by GitHub in exchange for a signed JWT, used to authenticate all GitHub REST API calls on behalf of the GitHub_App installation.
+- **Job_Queue**: The async queue used to decouple webhook receipt from review processing.
+- **Commit_SHA**: The full SHA-1 hash identifying a specific commit on a pull request branch.
 
 ---
 
@@ -27,11 +30,16 @@ The GitHub PR Auto-Review tool is a developer tool that integrates with GitHub t
 
 #### Acceptance Criteria
 
-1. THE GitHub_App SHALL authenticate with GitHub using a private key and App ID via JWT-based authentication.
+1. THE GitHub_App SHALL authenticate with GitHub by first generating a signed JWT using the App's private key and App ID, then exchanging that JWT for an Installation_Access_Token via the GitHub Apps REST API, and then using the Installation_Access_Token for all subsequent GitHub REST API calls within that installation context.
 2. WHEN a pull request is opened or updated, THE PR_Reviewer SHALL receive a webhook event from GitHub.
-3. WHEN a webhook event is received, THE PR_Reviewer SHALL retrieve the full diff for the pull request using the GitHub REST API.
-4. IF the GitHub API returns an authentication error, THEN THE PR_Reviewer SHALL log the error with the request context and halt processing for that event.
-5. IF the GitHub API returns a rate-limit response, THEN THE PR_Reviewer SHALL retry the request after the duration specified in the `Retry-After` header, up to 3 times.
+3. WHEN a webhook event is received, THE PR_Reviewer SHALL reject requests where the HMAC-SHA256 signature of the request body does not match the value in the `X-Hub-Signature-256` header.
+4. WHEN a webhook event passes signature validation, THE PR_Reviewer SHALL enqueue the event on the Job_Queue and acknowledge receipt within 3 seconds.
+5. WHEN a job is dequeued, THE PR_Reviewer SHALL retrieve the full diff for the pull request using the GitHub REST API.
+6. WHEN a webhook event is received, THE PR_Reviewer SHALL check whether a review from the bot already exists for the same Commit_SHA before posting.
+7. IF a review already exists for that Commit_SHA, THEN THE PR_Reviewer SHALL skip posting and log a deduplication notice.
+8. WHEN a new commit is pushed to an open pull request, THE PR_Reviewer SHALL post a new review scoped only to the lines changed in the new commits, and the new review SHALL NOT duplicate findings already posted on unchanged lines from prior reviews.
+9. IF the GitHub API returns an authentication error, THEN THE PR_Reviewer SHALL log the error with the request context and halt processing for that event.
+10. IF the GitHub API returns a rate-limit response, THEN THE PR_Reviewer SHALL retry the request after the duration specified in the `Retry-After` header, up to 3 times.
 
 ---
 
@@ -43,9 +51,11 @@ The GitHub PR Auto-Review tool is a developer tool that integrates with GitHub t
 
 1. WHEN a raw unified diff is received, THE Diff_Parser SHALL produce a structured representation containing file path, hunk headers, and per-line change type (added, removed, context).
 2. THE Diff_Parser SHALL preserve the GitHub pull request line position index for each changed line, enabling accurate comment placement via the GitHub API.
-3. IF a diff contains binary files, THEN THE Diff_Parser SHALL skip those files and record them in a skipped-files list.
-4. IF a diff exceeds 3,000 changed lines, THEN THE Diff_Parser SHALL truncate to the first 3,000 changed lines and include a truncation notice in the structured output.
-5. FOR ALL valid unified diffs, parsing the diff and re-serializing it to unified diff format SHALL produce output equivalent to the original input (round-trip property).
+3. THE Diff_Parser SHALL skip files matching a default ignore list including: `package-lock.json`, `yarn.lock`, `*.lock`, `vendor/**`, `generated/**`, `*.pb.go`, `*.min.js`, and `*.min.css`.
+4. WHERE a Config file is present, THE PR_Reviewer SHALL apply the `ignore_patterns` field to override or extend the default ignore list.
+5. IF a diff contains binary files, THEN THE Diff_Parser SHALL skip those files and record them in a skipped-files list.
+6. IF a diff exceeds 3,000 changed lines, THEN THE Diff_Parser SHALL truncate to the first 3,000 changed lines and include a truncation notice in the structured output.
+7. FOR ALL parsed diffs, the line position assigned to each changed line SHALL match the position index reported by the GitHub pull request diff API for that line.
 
 ---
 
@@ -56,11 +66,13 @@ The GitHub PR Auto-Review tool is a developer tool that integrates with GitHub t
 #### Acceptance Criteria
 
 1. THE Review_Engine SHALL analyze each structured diff against four Review_Categories: bugs, security, style, and performance.
-2. THE Review_Engine SHALL use a separate prompt template for each Review_Category.
-3. WHEN the Review_Engine processes a diff, THE Review_Engine SHALL produce zero or more Findings per Review_Category.
-4. WHEN a Finding is produced, THE Review_Engine SHALL assign it exactly one Review_Category.
-5. WHEN a Finding is produced, THE Review_Engine SHALL include the file path, line number, a plain-English explanation of at least one sentence, and a severity level of low, medium, or high.
-6. IF the LLM provider returns an error or timeout after 30 seconds, THEN THE Review_Engine SHALL retry the request once, and IF the retry fails, THEN THE Review_Engine SHALL record the failure and skip that Review_Category for the current diff.
+2. THE Review_Engine SHALL use OpenAI GPT-4o as the primary LLM provider, and the Review_Engine interface SHALL be designed to be provider-pluggable to allow substitution of other LLM providers.
+3. THE Review_Engine SHALL use a separate prompt template for each Review_Category.
+4. WHEN the Review_Engine processes a diff, THE Review_Engine SHALL produce zero or more Findings per Review_Category.
+5. WHEN a Finding is produced, THE Review_Engine SHALL assign it exactly one Review_Category.
+6. WHEN a Finding is produced, THE Review_Engine SHALL include the file path, line number, a plain-English explanation of at least one sentence, and a severity level of low, medium, or high.
+7. WHEN a diff exceeds a configurable token threshold, THE Review_Engine SHALL split the diff into chunks and analyze each chunk independently per Review_Category, then deduplicate Findings from multiple chunks by file path and line number before posting.
+8. IF the LLM provider returns an error or timeout after 30 seconds, THEN THE Review_Engine SHALL retry the request once using OpenAI's retry guidelines, and IF the retry fails, THEN THE Review_Engine SHALL record the failure and skip that Review_Category for the current diff.
 
 ---
 
@@ -72,8 +84,10 @@ The GitHub PR Auto-Review tool is a developer tool that integrates with GitHub t
 
 1. WHEN a Finding of severity medium or high is produced, THE Review_Engine SHALL generate a corrected code suggestion for the flagged lines.
 2. THE Review_Engine SHALL format code suggestions as valid GitHub suggestion blocks, compatible with GitHub's pull request suggestion API.
-3. WHEN a code suggestion is generated, THE Review_Engine SHALL include a plain-English explanation describing what was changed and why.
-4. IF the Review_Engine cannot generate a syntactically valid suggestion for a Finding, THEN THE Review_Engine SHALL omit the suggestion block and retain the plain-English explanation only.
+3. WHEN a Finding spans multiple lines, THE Review_Engine SHALL format the suggestion using GitHub's multi-line suggestion syntax with `start_line` and `line` fields.
+4. WHEN a Finding spans a single line, THE Review_Engine SHALL use single-line suggestion syntax.
+5. WHEN a code suggestion is generated, THE Review_Engine SHALL include a plain-English explanation describing what was changed and why.
+6. IF the Review_Engine cannot generate a syntactically valid suggestion for a Finding, THEN THE Review_Engine SHALL omit the suggestion block and retain the plain-English explanation only.
 
 ---
 
@@ -87,8 +101,9 @@ The GitHub PR Auto-Review tool is a developer tool that integrates with GitHub t
 2. THE Comment_Poster SHALL post each Finding as an inline comment anchored to the specific file path and line position from the Finding.
 3. WHEN all Findings have severity low, THE Comment_Poster SHALL submit the review with status `COMMENT`.
 4. WHEN one or more Findings have severity high, THE Comment_Poster SHALL submit the review with status `REQUEST_CHANGES`.
-5. WHEN no Findings are produced for a pull request, THE Comment_Poster SHALL post a single top-level review comment stating that no issues were found, with status `APPROVE`.
-6. IF the GitHub Reviews API returns a 422 error for a specific comment, THEN THE Comment_Poster SHALL skip that comment, log the invalid line reference, and continue posting remaining comments.
+5. WHEN no Findings are produced for a pull request, THE Comment_Poster SHALL post a single top-level review comment stating that no issues were found, with status `COMMENT`.
+6. WHERE the Config field `auto_approve_on_no_findings` is set to `true`, THE Comment_Poster SHALL submit the review with status `APPROVE` instead of `COMMENT` when no Findings are produced.
+7. IF the GitHub Reviews API returns a 422 error for a specific comment, THEN THE Comment_Poster SHALL skip that comment, log the invalid line reference, and continue posting remaining comments.
 
 ---
 
@@ -99,9 +114,10 @@ The GitHub PR Auto-Review tool is a developer tool that integrates with GitHub t
 #### Acceptance Criteria
 
 1. THE Evaluation_Harness SHALL execute the PR_Reviewer against a defined set of test PRs with known ground-truth labels.
-2. WHEN the Evaluation_Harness runs, THE PR_Reviewer SHALL produce zero Findings categorized as security on test PRs that contain no security vulnerabilities.
-3. THE Evaluation_Harness SHALL report precision, recall, and false positive count per Review_Category after each run.
-4. WHEN the false positive count for the security Review_Category exceeds zero on the agreed test suite, THE Evaluation_Harness SHALL mark the run as failed and output the offending Findings.
+2. THE Evaluation_Harness test corpus SHALL consist of at least 20 test PRs sourced from open-source GitHub repositories, with ground-truth labels applied by the engineering team before implementation begins, and at least 10 of those PRs SHALL contain no security vulnerabilities.
+3. WHEN the Evaluation_Harness runs, THE PR_Reviewer SHALL produce zero Findings categorized as security on test PRs that contain no security vulnerabilities.
+4. THE Evaluation_Harness SHALL report precision, recall, and false positive count per Review_Category after each run.
+5. WHEN the false positive count for the security Review_Category exceeds zero on the agreed test suite, THE Evaluation_Harness SHALL mark the run as failed and output the offending Findings.
 
 ---
 
@@ -116,3 +132,26 @@ The GitHub PR Auto-Review tool is a developer tool that integrates with GitHub t
 3. WHERE a Config file is absent, THE PR_Reviewer SHALL enable all four Review_Categories with default severity thresholds.
 4. WHERE a Config file is present, THE PR_Reviewer SHALL apply the `min_severity` field to suppress Findings below the specified severity level before posting.
 5. IF the Config file contains invalid YAML or unrecognized fields, THEN THE PR_Reviewer SHALL log a warning, ignore the invalid Config, and apply default settings.
+6. THE Config file SHALL support the following fields and types:
+
+```yaml
+enabled_categories: [bugs, security, style, performance]  # list of Review_Category values
+min_severity: low        # low | medium | high
+auto_approve_on_no_findings: false  # bool; when true, post APPROVE instead of COMMENT on clean PRs
+ignore_patterns:
+  - "vendor/**"          # list of glob patterns extending or overriding the default ignore list
+  - "*.min.js"
+```
+
+---
+
+### Requirement 8: Review Latency SLO
+
+**User Story:** As a developer, I want PR reviews posted promptly after I open or update a pull request, so that I can act on feedback without waiting.
+
+#### Acceptance Criteria
+
+1. THE PR_Reviewer SHALL use an async Job_Queue to decouple webhook receipt from review processing.
+2. THE PR_Reviewer SHALL acknowledge webhook events within 3 seconds of receipt.
+3. THE PR_Reviewer SHALL post a completed review within 5 minutes of receiving the webhook event under normal load.
+4. THE Evaluation_Harness SHALL measure and report end-to-end review latency per run.
