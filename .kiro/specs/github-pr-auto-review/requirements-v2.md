@@ -91,3 +91,75 @@ These are known hard problems that the design phase must address before implemen
 4. **Indexer resource isolation**: The Indexer makes many GitHub API calls (file fetches, directory listings) and must not compete with live review jobs for rate limit quota. The design should specify separate rate limit budgets or scheduling windows.
 
 5. **Privacy**: The Codebase_Index contains structural information about the repository. The design must specify whether the Index_Store is per-installation (on-premise) or centralized, and what data residency guarantees apply.
+
+
+---
+
+## Knowledge Infrastructure Expansion (v2)
+
+v1 establishes the Knowledge_Base with four corpora (org guidelines, language best practices, embedded CVE snapshot, internal fix history) and two MCP-backed live lookup tools (NVD, OSV). v2 expands the knowledge infrastructure in three directions: broader MCP server ecosystem, active knowledge curation, and cross-repository knowledge sharing.
+
+### Requirement 13: Expanded MCP Server Ecosystem
+
+**User Story:** As a security engineer, I want the Review_Agent to query a broader set of authoritative live sources during security analysis, so that its findings reflect the current threat landscape rather than a weekly snapshot.
+
+#### Acceptance Criteria
+
+1. THE PR_Reviewer SHALL support the following additional MCP servers in v2, each configurable per-repository:
+   - **GitHub Advisory Database** (`ghsa_lookup(ecosystem, package, version)`): queries GitHub's native advisory database for package-level vulnerabilities
+   - **Snyk Vulnerability DB** (`snyk_lookup(package, version, ecosystem)`): queries Snyk's vulnerability database for known CVEs and remediation guidance
+   - **OWASP Top 10 patterns** (`owasp_check(code_pattern, language)`): matches code patterns against OWASP Top 10 vulnerability signatures
+   - **Language-specific linter integration** (`run_linter(file_path, language, ruleset)`): invokes a language-appropriate linter (ESLint, Pylint, golangci-lint, etc.) against the changed file and returns structured findings
+   - **License compliance checker** (`check_license(package_name, ecosystem)`): verifies that newly added dependencies comply with the repository's configured license policy
+
+2. THE Review_Agent SHALL call `run_linter` as part of style analysis for any changed file where a supported linter is available, consuming one Tool_Budget call per file. Linter findings SHALL be merged with LLM-generated style findings in the synthesis step.
+
+3. THE Review_Agent SHALL call `check_license` for any diff that adds a new dependency to a manifest file (`package.json`, `requirements.txt`, `go.mod`, `Cargo.toml`, etc.), producing a Finding of Review_Category bugs with severity high if a license violation is detected.
+
+---
+
+### Requirement 14: Active Knowledge Curation and Cross-Repository Learning
+
+**User Story:** As a platform engineer, I want the Knowledge_Base to grow smarter over time by learning from accepted fixes across all repositories using the PR_Reviewer, so that a fix pattern discovered in one codebase benefits all others.
+
+#### Acceptance Criteria
+
+1. WHEN a bot suggestion is accepted and applied in any repository, THE PR_Reviewer SHALL add the fix pattern to a shared cross-repository fix knowledge base in addition to the per-repository Feedback_Store, tagged with: language, Review_Category, vulnerability type (for security fixes), and the diff pattern that triggered the original finding.
+
+2. THE Knowledge_Base SHALL expose a cross-repository fix corpus as a separate RAG retrieval target. THE Review_Agent SHALL query this corpus during security and bugs analysis to surface fix patterns from other repositories that match the current diff.
+
+3. THE Knowledge_Base SHALL support human-curated knowledge injection: the engineering team SHALL be able to add custom entries to any corpus (guidelines, CVE patterns, fix examples) via a CLI tool without redeploying the PR_Reviewer service.
+
+4. THE Knowledge_Base SHALL version all corpora. Each corpus update SHALL produce a new version, retaining the previous 5 versions for rollback. The Evaluation_Harness SHALL report which corpus version was active during each eval run.
+
+5. THE Knowledge_Base SHALL support per-language corpus weighting: repositories can configure which language best practices corpus receives higher retrieval weight when the diff contains mixed-language files.
+
+---
+
+### Requirement 15: Knowledge Retrieval Quality Measurement
+
+**User Story:** As an engineer building the PR_Reviewer, I want the Evaluation_Harness to measure whether knowledge retrieval is actually improving finding quality, so that I can justify the operational cost of maintaining the Knowledge_Base.
+
+#### Acceptance Criteria
+
+1. THE Evaluation_Harness SHALL run ablation tests comparing Review_Agent performance with and without Knowledge_Base retrieval enabled, reporting the delta in precision, recall, and false positive rate per Review_Category.
+
+2. THE Evaluation_Harness SHALL measure retrieval relevance: for each `query_knowledge_base` call in a review job, it SHALL score whether the retrieved entries were actually relevant to the Finding produced (using the `relevance_judge` from Req 10 AC3), and report mean retrieval relevance per corpus.
+
+3. THE Evaluation_Harness SHALL track Tool_Budget consumption attributable to knowledge retrieval calls separately from codebase context calls, enabling cost attribution between the two.
+
+4. WHEN mean retrieval relevance for a corpus falls below 0.6 (on a 0–1 scale) across 3 consecutive eval runs, THE Evaluation_Harness SHALL flag that corpus for re-embedding or curation review and notify the engineering team.
+
+---
+
+## v2 Design Constraints — Knowledge Infrastructure
+
+1. **Embedding model consistency**: all corpora in the Knowledge_Base must be embedded with the same model. Switching embedding models requires re-embedding all corpora. The design must specify the embedding model and version before any corpus is built.
+
+2. **MCP server rate limits**: live MCP tool calls (NVD, OSV, Snyk, GitHub Advisory) are subject to external rate limits. The design must specify per-server rate limit budgets and fallback behavior when limits are hit — likely fall back to the embedded CVE snapshot rather than failing the review.
+
+3. **Cross-repository fix corpus privacy**: fix patterns from one repository may contain proprietary code structure information. The design must specify whether the cross-repository corpus stores abstract patterns (safe) or concrete code snippets (requires consent), and what anonymization is applied.
+
+4. **Linter execution environment**: `run_linter` requires the appropriate linter binary to be available in the PR_Reviewer's execution environment. The design must specify how linters are provisioned — bundled in the container image, downloaded on demand, or run in an isolated subprocess — and how version pinning is managed.
+
+5. **Knowledge_Base cold start**: on first deployment, all corpora are empty. The design must specify a bootstrap process — minimum viable corpus size before the Knowledge_Base is enabled, and how the initial CVE snapshot and guidelines are seeded.
