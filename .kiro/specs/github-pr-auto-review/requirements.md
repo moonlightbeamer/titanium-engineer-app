@@ -23,6 +23,8 @@ The GitHub PR Auto-Review tool is a developer tool that integrates with GitHub t
 - **Job_Queue**: The async queue used to decouple webhook receipt from review processing.
 - **Commit_SHA**: The full SHA-1 hash identifying a specific commit on a pull request branch.
 - **Secret_Scrubber**: The pre-processing step that detects and redacts lines matching known secret patterns before diff content is sent to the LLM provider.
+- **Feedback_Store**: The per-repository persistent store that records developer signals on bot findings — accepted suggestions, dismissed comments, and explicit corrections — used to inject few-shot examples into the Review_Agent's context on future reviews.
+- **Escalation**: A special Finding type posted when a security candidate cannot be fully verified due to Tool_Budget exhaustion. Contains a human-readable question rather than a confirmed finding, and does not carry a severity level.
 
 ---
 
@@ -92,11 +94,12 @@ The GitHub PR Auto-Review tool is a developer tool that integrates with GitHub t
 7. THE Review_Agent SHALL analyze the diff across four Review_Categories: bugs, security, style, and performance. The agent MAY interleave reasoning across categories rather than processing them sequentially.
 8. WHEN a Finding is produced, THE Review_Agent SHALL assign it exactly one Review_Category, include the file path, line number, a plain-English explanation of at least one sentence, and a severity level of low, medium, or high.
 9. THE Review_Agent SHALL include a confidence score (low, medium, high) with each Finding. WHEN a Finding has confidence low, THE Review_Agent SHOULD attempt one additional tool call to gather supporting evidence before finalizing the Finding, subject to the Tool_Budget.
-10. WHEN the Review_Agent produces a candidate security Finding, THE Review_Agent SHALL attempt to verify it by fetching the relevant file context using `fetch_file_content` before finalizing it as a Finding, subject to the Tool_Budget. IF the Tool_Budget is exhausted before verification completes, THE Review_Agent SHALL discard the unverified security candidate rather than posting it.
+10. WHEN the Review_Agent produces a candidate security Finding, THE Review_Agent SHALL attempt to verify it by fetching the relevant file context using `fetch_file_content` before finalizing it as a Finding, subject to the Tool_Budget. IF the Tool_Budget is exhausted before verification completes, THE Review_Agent SHALL NOT silently discard the candidate; instead it SHALL post an Escalation comment in the format: "⚠️ Possible security concern on line {N} — could not fully verify due to context limits. Recommend a manual check: {reason the candidate was flagged}." Escalation comments SHALL be posted without a suggestion block and SHALL NOT count toward the severity-based review status determination.
 11. BEFORE sending any diff or file content to the LLM provider, THE Review_Agent SHALL pass it through the Secret_Scrubber and redact lines matching known secret patterns. THE PR_Reviewer SHALL treat Secret_Scrubber detections as the authoritative signal for committed secrets; the security Review_Category SHALL NOT be expected to produce Findings for lines that have been redacted.
 12. IF the LLM provider returns an error or timeout after 30 seconds, THEN THE Review_Agent SHALL retry the request once after a 1-second delay, and IF the retry fails, THEN THE Review_Agent SHALL record the failure, finalize any Findings produced so far, and proceed to posting.
 13. THE Review_Agent SHALL NOT chunk diffs mechanically by token count. Instead, THE Review_Agent SHALL use fetch_file_content and related Agent_Tools to retrieve additional context on demand, bounded by the Tool_Budget.
 14. BEFORE finalizing Findings for posting, THE Review_Agent SHALL call `read_findings_so_far()` and review all Findings produced across categories, merge Findings that reference the same file path and line number into a single Finding with a combined explanation, and annotate related Findings where a bug and a security issue share the same root cause. Cross-category relationship annotations SHALL be included inline in the plain-English explanation of the relevant Finding.
+15. AFTER producing Findings, THE Review_Agent SHALL use `list_directory` and `search_file` to check whether functions modified in the diff have corresponding test coverage. WHERE a modified function has no identifiable test coverage, THE Review_Agent SHALL produce a Finding of Review_Category bugs with a suggested test case and an explanation of what behavior should be tested.
 
 ---
 
@@ -167,6 +170,7 @@ min_severity: low        # low | medium | high; default is low (all findings pos
 auto_approve_on_no_findings: false  # bool; when true, post APPROVE instead of COMMENT on clean PRs
 tool_budget: 20          # int; max Agent_Tool calls per review job (replaces token_threshold — that field is not supported)
 review_draft_prs: false  # bool; when false, draft PRs are skipped
+codebase_index_enabled: false  # bool; reserved for v2 — when true, injects persistent codebase index into agent context
 ignore_patterns_extend:
   - "vendor/**"          # list of glob patterns ADDED to the default ignore list
   - "*.min.js"
@@ -188,3 +192,20 @@ ignore_patterns_override:
 3. THE PR_Reviewer SHALL post a completed review within 10 minutes of receiving the webhook event with no more than 10 concurrent review jobs in the queue.
 4. THE Evaluation_Harness SHALL measure and report end-to-end review latency per run, enforcing the condition of no more than 10 concurrent review jobs during latency measurement.
 5. THE Evaluation_Harness SHALL report average Tool_Budget consumption per review job alongside latency metrics.
+
+---
+
+### Requirement 9: Feedback Loop and Continuous Improvement
+
+**User Story:** As a VP of Engineering, I want the PR_Reviewer to learn from developer responses to its findings, so that review quality improves over time for each repository rather than plateauing at launch.
+
+#### Acceptance Criteria
+
+1. THE PR_Reviewer SHALL subscribe to GitHub webhook events for pull request review comment resolution, comment replies, and suggestion acceptance on comments posted by the bot.
+2. WHEN a developer resolves a bot comment without applying the suggestion, THE PR_Reviewer SHALL record a negative signal in the Feedback_Store for that finding type, file path pattern, and repository.
+3. WHEN a developer applies a bot suggestion block, THE PR_Reviewer SHALL record a positive signal in the Feedback_Store for that finding type, file path pattern, and repository.
+4. WHEN a developer replies to a bot comment with text indicating disagreement (e.g., "not an issue", "false positive", "won't fix"), THE PR_Reviewer SHALL record a negative signal in the Feedback_Store for that finding type and repository.
+5. BEFORE the Review_Agent begins analysis on a new PR, THE PR_Reviewer SHALL query the Feedback_Store for the repository and inject up to 5 relevant historical signals as few-shot examples in the agent's system prompt, prioritizing signals from the same file path patterns as the current diff.
+6. THE Feedback_Store SHALL record, at minimum: repository ID, finding category, file path pattern, signal type (positive or negative), and timestamp.
+7. THE Feedback_Store SHALL NOT store raw diff content, code snippets, or any content that passed through the Secret_Scrubber.
+8. THE Evaluation_Harness SHALL report the number of accumulated feedback signals per repository and per Review_Category alongside precision and recall metrics.
