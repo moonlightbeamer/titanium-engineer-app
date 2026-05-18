@@ -8,8 +8,8 @@ The GitHub PR Auto-Review tool is a developer tool that integrates with GitHub t
 
 - **PR_Reviewer**: The automated bot system that reads PR diffs and posts review comments to GitHub.
 - **Diff_Parser**: The component responsible for parsing raw GitHub PR diffs into structured, line-addressable format.
-- **Review_Engine**: The LLM-backed component, now implemented as Review_Agent, that analyzes structured diff data by reasoning iteratively and invoking Agent_Tools to gather context before producing categorized Findings.
-- **Review_Agent**: The LLM agent that orchestrates PR review by reasoning over diff content, invoking tools to gather additional context, and producing categorized Findings. Replaces the static Review_Engine pipeline.
+- **Review_Engine** (deprecated — replaced by Review_Agent): see Review_Agent.
+- **Review_Agent**: The LLM agent that orchestrates PR review by reasoning over diff content, invoking tools to gather additional context, and producing categorized Findings.
 - **Tool_Budget**: The maximum number of tool calls the Review_Agent is permitted to make per PR review job, used to bound cost and latency.
 - **Agent_Tool**: A discrete capability the Review_Agent can invoke during reasoning, such as fetching a full file, listing directory contents, or querying call sites of a modified function.
 - **Comment_Poster**: The component that formats findings and posts them as review comments to the GitHub API.
@@ -56,7 +56,7 @@ The GitHub PR Auto-Review tool is a developer tool that integrates with GitHub t
 
 ### Requirement 2: PR Diff Parsing
 
-**User Story:** As a developer, I want PR diffs parsed into a structured format, so that the Review_Engine can reference specific files and line numbers when generating findings.
+**User Story:** As a developer, I want PR diffs parsed into a structured format, so that the Review_Agent can reference specific files and line numbers when generating findings.
 
 #### Acceptance Criteria
 
@@ -73,27 +73,30 @@ The GitHub PR Auto-Review tool is a developer tool that integrates with GitHub t
 
 ### Requirement 3: Multi-Category Review Analysis
 
-**User Story:** As a senior engineer, I want the Review_Engine to analyze PRs across four categories, so that routine issues are caught automatically without my manual review.
+**User Story:** As a senior engineer, I want the Review_Agent to analyze PRs across four categories, so that routine issues are caught automatically without my manual review.
 
 #### Acceptance Criteria
 
 1. THE Review_Agent SHALL use OpenAI GPT-4o as the primary LLM provider, and the Review_Agent interface SHALL be designed to be provider-pluggable to allow substitution of other LLM providers.
-2. THE Review_Agent SHALL have access to the following Agent_Tools during a review job:
+2. THE Review_Agent SHALL have access to the following Agent_Tools during a review job. The structured diff is passed directly into the agent's initial context by the Diff_Parser before the job starts — the agent does not need to fetch it via a tool call:
    - `fetch_file_content(path, ref)`: retrieves the full content of a file at a given git ref from the repository
-   - `fetch_pr_diff(pr_number)`: retrieves the structured diff for the pull request (already parsed by Diff_Parser)
+   - `fetch_pr_metadata(pr_number)`: returns the PR title, description, linked issues, and author; THE Review_Agent SHALL call this as its first tool call on every job to understand intent before analyzing code
    - `search_file(path, pattern)`: searches a file for lines matching a regex pattern
    - `list_directory(path, ref)`: lists files in a directory at a given git ref
    - `get_symbol_usages(symbol, path)`: returns lines in a file where a given symbol is referenced
+   - `read_findings_so_far()`: returns all Findings the Review_Agent has produced so far in the current job, used for cross-category synthesis and deduplication
 3. THE Review_Agent SHALL reason iteratively — it MAY invoke Agent_Tools to gather additional context before deciding whether to produce a Finding, rather than classifying based solely on the diff.
-4. THE Review_Agent SHALL NOT exceed a configurable Tool_Budget of tool calls per PR review job. WHERE a Config file is absent, the default Tool_Budget SHALL be 20 tool calls per job.
+4. THE Review_Agent SHALL NOT exceed a configurable Tool_Budget of tool calls per PR review job. WHERE a Config file is absent, the default Tool_Budget SHALL be 20 tool calls per job. The mandatory `fetch_pr_metadata` call on job start is excluded from the Tool_Budget count, as it is infrastructure rather than agent reasoning. The mandatory `read_findings_so_far()` call during the synthesis step described in AC14 is also excluded from the Tool_Budget count.
 5. WHEN the Review_Agent reaches the Tool_Budget limit, it SHALL finalize its current Findings and proceed to posting without further tool calls, logging that the budget was reached.
 6. BEFORE invoking any Agent_Tool that fetches file content, THE Review_Agent SHALL pass the fetched content through the Secret_Scrubber before including it in the agent context.
 7. THE Review_Agent SHALL analyze the diff across four Review_Categories: bugs, security, style, and performance. The agent MAY interleave reasoning across categories rather than processing them sequentially.
 8. WHEN a Finding is produced, THE Review_Agent SHALL assign it exactly one Review_Category, include the file path, line number, a plain-English explanation of at least one sentence, and a severity level of low, medium, or high.
-9. THE Review_Agent SHALL include a confidence score (low, medium, high) with each Finding. WHEN confidence is low, THE Review_Agent SHOULD attempt one additional tool call to verify before finalizing the Finding, subject to the Tool_Budget.
-10. BEFORE sending any diff or file content to the LLM provider, THE Review_Agent SHALL pass it through the Secret_Scrubber and redact lines matching known secret patterns. THE PR_Reviewer SHALL treat Secret_Scrubber detections as the authoritative signal for committed secrets; the security Review_Category SHALL NOT be expected to produce Findings for lines that have been redacted.
-11. IF the LLM provider returns an error or timeout after 30 seconds, THEN THE Review_Agent SHALL retry the request once after a 1-second delay, and IF the retry fails, THEN THE Review_Agent SHALL record the failure, finalize any Findings produced so far, and proceed to posting.
-12. THE Review_Agent SHALL NOT chunk diffs mechanically by token count. Instead, THE Review_Agent SHALL use fetch_file_content and related Agent_Tools to retrieve additional context on demand, bounded by the Tool_Budget.
+9. THE Review_Agent SHALL include a confidence score (low, medium, high) with each Finding. WHEN a Finding has confidence low, THE Review_Agent SHOULD attempt one additional tool call to gather supporting evidence before finalizing the Finding, subject to the Tool_Budget.
+10. WHEN the Review_Agent produces a candidate security Finding, THE Review_Agent SHALL attempt to verify it by fetching the relevant file context using `fetch_file_content` before finalizing it as a Finding, subject to the Tool_Budget. IF the Tool_Budget is exhausted before verification completes, THE Review_Agent SHALL discard the unverified security candidate rather than posting it.
+11. BEFORE sending any diff or file content to the LLM provider, THE Review_Agent SHALL pass it through the Secret_Scrubber and redact lines matching known secret patterns. THE PR_Reviewer SHALL treat Secret_Scrubber detections as the authoritative signal for committed secrets; the security Review_Category SHALL NOT be expected to produce Findings for lines that have been redacted.
+12. IF the LLM provider returns an error or timeout after 30 seconds, THEN THE Review_Agent SHALL retry the request once after a 1-second delay, and IF the retry fails, THEN THE Review_Agent SHALL record the failure, finalize any Findings produced so far, and proceed to posting.
+13. THE Review_Agent SHALL NOT chunk diffs mechanically by token count. Instead, THE Review_Agent SHALL use fetch_file_content and related Agent_Tools to retrieve additional context on demand, bounded by the Tool_Budget.
+14. BEFORE finalizing Findings for posting, THE Review_Agent SHALL call `read_findings_so_far()` and review all Findings produced across categories, merge Findings that reference the same file path and line number into a single Finding with a combined explanation, and annotate related Findings where a bug and a security issue share the same root cause. Cross-category relationship annotations SHALL be included inline in the plain-English explanation of the relevant Finding.
 
 ---
 
@@ -103,12 +106,12 @@ The GitHub PR Auto-Review tool is a developer tool that integrates with GitHub t
 
 #### Acceptance Criteria
 
-1. WHEN a Finding of severity medium or high is produced, THE Review_Engine SHALL generate a corrected code suggestion for the flagged lines.
-2. THE Review_Engine SHALL format code suggestions as valid GitHub suggestion blocks, compatible with GitHub's pull request suggestion API.
-3. WHEN a Finding spans multiple lines, THE Review_Engine SHALL format the suggestion using GitHub's multi-line suggestion syntax with `start_line` and `line` fields.
-4. WHEN a Finding spans a single line, THE Review_Engine SHALL use single-line suggestion syntax.
-5. WHEN a code suggestion is generated, THE Review_Engine SHALL include a plain-English explanation describing what was changed and why.
-6. IF the Review_Engine cannot generate a syntactically valid suggestion for a Finding, THEN THE Review_Engine SHALL omit the suggestion block and retain the plain-English explanation only.
+1. WHEN a Finding of severity medium or high is produced, THE Review_Agent SHALL generate a corrected code suggestion for the flagged lines.
+2. THE Review_Agent SHALL format code suggestions as valid GitHub suggestion blocks, compatible with GitHub's pull request suggestion API.
+3. WHEN a Finding spans multiple lines, THE Review_Agent SHALL format the suggestion using GitHub's multi-line suggestion syntax with `start_line` and `line` fields.
+4. WHEN a Finding spans a single line, THE Review_Agent SHALL use single-line suggestion syntax.
+5. WHEN a code suggestion is generated, THE Review_Agent SHALL include a plain-English explanation describing what was changed and why.
+6. IF the Review_Agent cannot generate a syntactically valid suggestion for a Finding, THEN THE Review_Agent SHALL omit the suggestion block and retain the plain-English explanation only.
 
 ---
 
@@ -118,7 +121,7 @@ The GitHub PR Auto-Review tool is a developer tool that integrates with GitHub t
 
 #### Acceptance Criteria
 
-1. WHEN the Review_Engine produces one or more Findings, THE Comment_Poster SHALL submit them as a single GitHub pull request review via the GitHub Reviews API.
+1. WHEN the Review_Agent produces one or more Findings, THE Comment_Poster SHALL submit them as a single GitHub pull request review via the GitHub Reviews API.
 2. THE Comment_Poster SHALL post each Finding as an inline comment anchored to the specific file path and line position from the Finding.
 3. WHEN all Findings have severity low, THE Comment_Poster SHALL submit the review with status `COMMENT`.
 4. WHEN one or more Findings have severity medium and no Findings have severity high, THE Comment_Poster SHALL submit the review with status `COMMENT`.
@@ -162,7 +165,7 @@ The GitHub PR Auto-Review tool is a developer tool that integrates with GitHub t
 enabled_categories: [bugs, security, style, performance]  # list of Review_Category values
 min_severity: low        # low | medium | high; default is low (all findings posted)
 auto_approve_on_no_findings: false  # bool; when true, post APPROVE instead of COMMENT on clean PRs
-tool_budget: 20          # int; max Agent_Tool calls per review job
+tool_budget: 20          # int; max Agent_Tool calls per review job (replaces token_threshold — that field is not supported)
 review_draft_prs: false  # bool; when false, draft PRs are skipped
 ignore_patterns_extend:
   - "vendor/**"          # list of glob patterns ADDED to the default ignore list
