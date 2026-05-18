@@ -82,7 +82,7 @@ The GitHub PR Auto-Review tool is a developer tool that integrates with GitHub t
 6. WHEN a Finding is produced, THE Review_Engine SHALL assign it exactly one Review_Category.
 7. WHEN a Finding is produced, THE Review_Engine SHALL include the file path, line number, a plain-English explanation of at least one sentence, and a severity level of low, medium, or high.
 8. WHEN a diff exceeds a configurable token threshold, THE Review_Engine SHALL split the diff into chunks and analyze each chunk independently per Review_Category, then deduplicate Findings from multiple chunks by file path and line number before posting.
-9. IF the LLM provider returns an error or timeout after 30 seconds, THEN THE Review_Engine SHALL retry the request once after a 1-second delay using exponential backoff, and IF the retry fails, THEN THE Review_Engine SHALL record the failure and skip that Review_Category for the current diff.
+9. IF the LLM provider returns an error or timeout after 30 seconds, THEN THE Review_Engine SHALL retry the request once after a 1-second delay, and IF the retry fails, THEN THE Review_Engine SHALL record the failure and skip that Review_Category for the current diff.
 
 ---
 
@@ -142,7 +142,7 @@ The GitHub PR Auto-Review tool is a developer tool that integrates with GitHub t
 
 1. THE PR_Reviewer SHALL read a Config file from the path `.github/pr-auto-review.yml` in the target repository when processing a pull request.
 2. WHERE a Config file is present, THE PR_Reviewer SHALL enable only the Review_Categories listed in the `enabled_categories` field.
-3. WHERE a Config file is absent, THE PR_Reviewer SHALL enable all four Review_Categories with a default min_severity of low (all findings posted).
+3. WHERE a Config file is absent, THE PR_Reviewer SHALL enable all four Review_Categories with a default min_severity of low (all findings posted) and a default token_threshold of 6000.
 4. WHERE a Config file is present, THE PR_Reviewer SHALL apply the `min_severity` field to suppress Findings below the specified severity level before posting.
 5. IF the Config file contains invalid YAML or unrecognized fields, THEN THE PR_Reviewer SHALL log a warning, ignore the invalid Config, and apply default settings.
 6. THE Config file SHALL support the following fields and types:
