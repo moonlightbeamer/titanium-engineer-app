@@ -209,3 +209,49 @@ ignore_patterns_override:
 6. THE Feedback_Store SHALL record, at minimum: repository ID, finding category, file path pattern, signal type (positive or negative), and timestamp.
 7. THE Feedback_Store SHALL NOT store raw diff content, code snippets, or any content that passed through the Secret_Scrubber.
 8. THE Evaluation_Harness SHALL report the number of accumulated feedback signals per repository and per Review_Category alongside precision and recall metrics.
+
+---
+
+### Requirement 10: Evaluation Harness (Separate Developer Tool)
+
+**User Story:** As an engineer building the PR_Reviewer, I want a standalone evaluation harness that judges the agent's output quality and reports improvement or regression to the team, so that prompt changes and model updates are measurable rather than based on intuition.
+
+#### Acceptance Criteria
+
+1. THE Evaluation_Harness SHALL be a standalone system, separate from the PR_Reviewer app, with no runtime dependency on the live production service. It SHALL be runnable by any team member against any version of the PR_Reviewer.
+
+2. THE Evaluation_Harness SHALL maintain a labeled test corpus of at least 20 pull requests sourced from open-source GitHub repositories, with ground-truth labels applied by at least two engineers before the corpus is locked (per Req 6 AC2). The corpus SHALL include at least 10 PRs with no security vulnerabilities (for false-positive measurement) and at least 5 PRs with known security vulnerabilities (for recall measurement).
+
+3. THE Evaluation_Harness SHALL implement the following judge suite using LiteLLM-compatible judge calls, each returning a structured score and rationale:
+   - `relevance_judge`: scores whether a Finding references something actually present in the diff (0–10)
+   - `accuracy_judge`: scores whether the Finding's diagnosis is technically correct, using ground-truth labels as reference (0–10)
+   - `actionability_judge`: scores whether the suggested fix is implementable as written (0–10)
+   - `clarity_judge`: scores whether the plain-English explanation is clear to a junior developer (0–10)
+   - `verification_trace_judge`: given the agent's tool call chain for a security candidate, scores whether the agent actually verified before deciding to confirm or discard (0–10)
+   - `quality_with_cot_judge`: scores overall review quality with a chain-of-thought rationale, used for end-to-end coherence measurement (0–10)
+
+4. THE Evaluation_Harness SHALL treat the four per-finding scores (relevance, accuracy, actionability, clarity) as a vector and SHALL NOT aggregate them into a single mean score. Each dimension SHALL be reported separately per Review_Category.
+
+5. THE Evaluation_Harness SHALL implement classical metrics alongside LLM judges:
+   - Schema validity: each Finding output SHALL conform to the defined Finding schema
+   - Regex contains-check: security Findings SHALL reference a specific line number and file path
+   - Token F1 against reference fixes for known bugs in the corpus
+
+6. THE Evaluation_Harness SHALL track cost and latency per review job using `litellm.completion_cost`, reporting: total cost per review, tool calls consumed vs. Tool_Budget, and end-to-end latency from job start to review posted.
+
+7. THE Evaluation_Harness SHALL detect same-family judge bias by running the security verification judge with at least two different LLM model families and reporting the score delta. The judge model used for the security category SHALL be a different model family than the Review_Agent's primary provider (GPT-4o).
+
+8. THE Evaluation_Harness SHALL implement a meta-prompting improvement loop:
+   - Identify the 5 lowest-scoring reviews by `quality_with_cot_judge`
+   - Submit those reviews and the current Review_Agent system prompt to a reflector LLM
+   - The reflector SHALL diagnose one specific failure mode and produce a revised system prompt
+   - The Evaluation_Harness SHALL re-run the Review_Agent on the same inputs with the revised prompt and re-judge
+   - The delta in scores SHALL be reported to the engineering team before the prompt change is approved for deployment
+
+9. THE Evaluation_Harness SHALL be productionized as an Inspect AI task suite, enabling any team member to run `inspect eval` from the command line and view per-sample traces, judge rationales, and aggregate metrics in `inspect view` without reading notebook code.
+
+10. THE Evaluation_Harness SHALL run on two triggers:
+    - Before any prompt change or model update ships: full corpus run, must pass zero-false-positive gate on security (per Req 6) to proceed
+    - Weekly on a random sample of 10 live reviews: human vibe check (1–5 score per review) logged to a dataframe alongside `quality_with_cot_judge` scores, with human-vs-judge correlation reported to track judge reliability over time
+
+11. THE Evaluation_Harness SHALL report a summary to the engineering team after each run including: precision, recall, and false positive count per Review_Category; mean per-dimension finding scores; average cost and latency per review; Tool_Budget consumption distribution; and delta vs. the previous run for each metric.
