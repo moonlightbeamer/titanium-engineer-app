@@ -23,7 +23,7 @@ v2 is intentionally deferred from v1 because its value compounds with real usage
 
 ## Requirements
 
-### Requirement 10: Codebase Indexing
+### Requirement 12: Codebase Indexing
 
 **User Story:** As a senior engineer, I want the Review_Agent to start each review already knowing our codebase architecture and conventions, so that its findings are calibrated to our specific codebase rather than generic patterns.
 
@@ -43,7 +43,7 @@ v2 is intentionally deferred from v1 because its value compounds with real usage
 
 ---
 
-### Requirement 11: Index-Informed Review Behavior
+### Requirement 13: Index-Informed Review Behavior
 
 **User Story:** As a developer, I want the Review_Agent to use codebase knowledge to produce more relevant findings, so that I receive fewer generic comments and more findings specific to how our codebase actually works.
 
@@ -57,7 +57,7 @@ v2 is intentionally deferred from v1 because its value compounds with real usage
 
 ---
 
-### Requirement 12: Index Staleness and Monorepo Handling
+### Requirement 14: Index Staleness and Monorepo Handling
 
 **User Story:** As a repository maintainer, I want the Codebase_Index to stay accurate as the codebase evolves, so that the Review_Agent's knowledge doesn't drift from reality.
 
@@ -99,7 +99,7 @@ These are known hard problems that the design phase must address before implemen
 
 v1 establishes the Knowledge_Base with four corpora (org guidelines, language best practices, embedded CVE snapshot, internal fix history) and two MCP-backed live lookup tools (NVD, OSV). v2 expands the knowledge infrastructure in three directions: broader MCP server ecosystem, active knowledge curation, and cross-repository knowledge sharing.
 
-### Requirement 13: Expanded MCP Server Ecosystem
+### Requirement 15: Expanded MCP Server Ecosystem
 
 **User Story:** As a security engineer, I want the Review_Agent to query a broader set of authoritative live sources during security analysis, so that its findings reflect the current threat landscape rather than a weekly snapshot.
 
@@ -118,7 +118,7 @@ v1 establishes the Knowledge_Base with four corpora (org guidelines, language be
 
 ---
 
-### Requirement 14: Active Knowledge Curation and Cross-Repository Learning
+### Requirement 16: Active Knowledge Curation and Cross-Repository Learning
 
 **User Story:** As a platform engineer, I want the Knowledge_Base to grow smarter over time by learning from accepted fixes across all repositories using the PR_Reviewer, so that a fix pattern discovered in one codebase benefits all others.
 
@@ -136,7 +136,7 @@ v1 establishes the Knowledge_Base with four corpora (org guidelines, language be
 
 ---
 
-### Requirement 15: Knowledge Retrieval Quality Measurement
+### Requirement 17: Knowledge Retrieval Quality Measurement
 
 **User Story:** As an engineer building the PR_Reviewer, I want the Evaluation_Harness to measure whether knowledge retrieval is actually improving finding quality, so that I can justify the operational cost of maintaining the Knowledge_Base.
 
@@ -144,7 +144,7 @@ v1 establishes the Knowledge_Base with four corpora (org guidelines, language be
 
 1. THE Evaluation_Harness SHALL run ablation tests comparing Review_Agent performance with and without Knowledge_Base retrieval enabled, reporting the delta in precision, recall, and false positive rate per Review_Category.
 
-2. THE Evaluation_Harness SHALL measure retrieval relevance: for each `query_knowledge_base` call in a review job, it SHALL score whether the retrieved entries were actually relevant to the Finding produced (using the `relevance_judge` from Req 10 AC3), and report mean retrieval relevance per corpus.
+2. THE Evaluation_Harness SHALL measure retrieval relevance: for each `query_knowledge_base` call in a review job, it SHALL score whether the retrieved entries were actually relevant to the Finding produced (using the `relevance_judge` from v1 Req 10 AC3), and report mean retrieval relevance per corpus.
 
 3. THE Evaluation_Harness SHALL track Tool_Budget consumption attributable to knowledge retrieval calls separately from codebase context calls, enabling cost attribution between the two.
 
