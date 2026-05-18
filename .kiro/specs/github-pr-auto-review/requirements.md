@@ -144,7 +144,7 @@ The GitHub PR Auto-Review tool is a developer tool that integrates with GitHub t
 #### Acceptance Criteria
 
 1. THE Evaluation_Harness SHALL execute the PR_Reviewer against a defined set of test PRs with known ground-truth labels.
-2. THE Evaluation_Harness test corpus SHALL consist of at least 20 test PRs sourced from open-source GitHub repositories, with ground-truth labels applied by the engineering team before implementation begins, each ground-truth label SHALL be reviewed and agreed upon by at least two engineers before the corpus is locked, and at least 10 of those PRs SHALL contain no security vulnerabilities.
+2. THE Evaluation_Harness test corpus SHALL be defined and maintained as specified in Req 10 AC2.
 3. WHEN the Evaluation_Harness runs, THE PR_Reviewer SHALL produce zero Findings categorized as security on test PRs that contain no security vulnerabilities.
 4. THE Evaluation_Harness SHALL report precision, recall, and false positive count per Review_Category after each run.
 5. WHEN the false positive count for the security Review_Category exceeds zero on the agreed test suite, THE Evaluation_Harness SHALL mark the run as failed and output the offending Findings.
@@ -220,7 +220,7 @@ ignore_patterns_override:
 
 1. THE Evaluation_Harness SHALL be a standalone system, separate from the PR_Reviewer app, with no runtime dependency on the live production service. It SHALL be runnable by any team member against any version of the PR_Reviewer.
 
-2. THE Evaluation_Harness SHALL maintain a labeled test corpus of at least 20 pull requests sourced from open-source GitHub repositories, with ground-truth labels applied by at least two engineers before the corpus is locked (per Req 6 AC2). The corpus SHALL include at least 10 PRs with no security vulnerabilities (for false-positive measurement) and at least 5 PRs with known security vulnerabilities (for recall measurement).
+2. THE Evaluation_Harness SHALL maintain a labeled test corpus of at least 20 pull requests sourced from open-source GitHub repositories, with ground-truth labels applied by at least two engineers before the corpus is locked. Each ground-truth label SHALL be reviewed and agreed upon by at least two engineers before the corpus is locked. The corpus SHALL include at least 10 PRs with no security vulnerabilities (for false-positive measurement) and at least 5 PRs with known security vulnerabilities (for recall measurement). For PRs in the corpus that contain known bugs, the ground-truth labels SHALL include a reference fix — the specific code change that correctly addresses the bug — used as the Token F1 reference in AC5.
 
 3. THE Evaluation_Harness SHALL implement the following judge suite using LiteLLM-compatible judge calls, each returning a structured score and rationale:
    - `relevance_judge`: scores whether a Finding references something actually present in the diff (0–10)
@@ -253,5 +253,6 @@ ignore_patterns_override:
 10. THE Evaluation_Harness SHALL run on two triggers:
     - Before any prompt change or model update ships: full corpus run, must pass zero-false-positive gate on security (per Req 6) to proceed
     - Weekly on a random sample of 10 live reviews: human vibe check (1–5 score per review) logged to a dataframe alongside `quality_with_cot_judge` scores, with human-vs-judge correlation reported to track judge reliability over time
+    Reviews sampled for human vibe check SHALL be sourced from the stored Findings output, not from raw diff content, and SHALL NOT contain any content that was redacted by the Secret_Scrubber during the original review job.
 
 11. THE Evaluation_Harness SHALL report a summary to the engineering team after each run including: precision, recall, and false positive count per Review_Category; mean per-dimension finding scores; average cost and latency per review; Tool_Budget consumption distribution; and delta vs. the previous run for each metric.
