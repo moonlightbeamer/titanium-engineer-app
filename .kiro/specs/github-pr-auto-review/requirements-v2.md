@@ -112,7 +112,7 @@ v1 establishes the Knowledge_Base with four corpora (org guidelines, language be
    - **Language-specific linter integration** (`run_linter(file_path, language, ruleset)`): invokes a language-appropriate linter (ESLint, Pylint, golangci-lint, etc.) against the changed file and returns structured findings
    - **License compliance checker** (`check_license(package_name, ecosystem)`): verifies that newly added dependencies comply with the repository's configured license policy
 
-2. THE Review_Agent SHALL call `run_linter` as part of style analysis for any changed file where a supported linter is available, consuming one Tool_Budget call per file. Linter findings SHALL be merged with LLM-generated style findings in the synthesis step.
+2. THE Review_Agent SHALL call `run_linter` as part of style analysis for any changed file where a supported linter is available, consuming one Tool_Budget call per file, up to a configurable maximum of `max_linter_files` files per job (default: 5), prioritizing files with the most changed lines. IF the number of lintable changed files exceeds `max_linter_files`, THE Review_Agent SHALL log which files were skipped. Linter findings SHALL be merged with LLM-generated style findings in the synthesis step.
 
 3. THE Review_Agent SHALL call `check_license` for any diff that adds a new dependency to a manifest file (`package.json`, `requirements.txt`, `go.mod`, `Cargo.toml`, etc.), producing a Finding of Review_Category bugs with severity high if a license violation is detected.
 
@@ -124,7 +124,7 @@ v1 establishes the Knowledge_Base with four corpora (org guidelines, language be
 
 #### Acceptance Criteria
 
-1. WHEN a bot suggestion is accepted and applied in any repository, THE PR_Reviewer SHALL add the fix pattern to a shared cross-repository fix knowledge base in addition to the per-repository Feedback_Store, tagged with: language, Review_Category, vulnerability type (for security fixes), and the diff pattern that triggered the original finding.
+1. WHEN a bot suggestion is accepted and applied in any repository, THE PR_Reviewer SHALL add the fix pattern to a shared cross-repository fix knowledge base in addition to the per-repository Feedback_Store, tagged with: language, Review_Category, vulnerability type (for security fixes), and an abstract description of the code pattern that triggered the finding, not raw code.
 
 2. THE Knowledge_Base SHALL expose a cross-repository fix corpus as a separate RAG retrieval target. THE Review_Agent SHALL query this corpus during security and bugs analysis to surface fix patterns from other repositories that match the current diff.
 

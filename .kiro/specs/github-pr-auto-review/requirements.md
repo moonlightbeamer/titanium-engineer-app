@@ -93,7 +93,7 @@ The GitHub PR Auto-Review tool is a developer tool that integrates with GitHub t
    - `lookup_cve(pattern_or_cve_id)`: queries a live CVE/vulnerability database via MCP_Server and returns matching advisories and known fix patterns; counts against the Tool_Budget
    - `check_package_advisory(package_name, version, ecosystem)`: queries the OSV API via MCP_Server for known vulnerabilities in a specific package version; counts against the Tool_Budget
 3. THE Review_Agent SHALL reason iteratively — it MAY invoke Agent_Tools to gather additional context before deciding whether to produce a Finding, rather than classifying based solely on the diff.
-4. THE Review_Agent SHALL NOT exceed a configurable Tool_Budget of tool calls per PR review job. WHERE a Config file is absent, the default Tool_Budget SHALL be 20 tool calls per job. The mandatory `fetch_pr_metadata` call on job start is excluded from the Tool_Budget count, as it is infrastructure rather than agent reasoning. The mandatory `read_findings_so_far()` call during the synthesis step described in AC14 is also excluded from the Tool_Budget count.
+4. THE Review_Agent SHALL NOT exceed a configurable Tool_Budget of tool calls per PR review job. WHERE a Config file is absent, the default Tool_Budget SHALL be 20 tool calls per job. The mandatory `fetch_pr_metadata` call on job start is excluded from the Tool_Budget count, as it is infrastructure rather than agent reasoning. The mandatory `read_findings_so_far()` call during the synthesis step described in AC14 is also excluded from the Tool_Budget count. The mandatory `query_knowledge_base` priming calls described in Req 11 AC4 and AC6 are also excluded from the Tool_Budget count — they are infrastructure knowledge priming, not agent reasoning.
 5. WHEN the Review_Agent reaches the Tool_Budget limit, it SHALL finalize its current Findings and proceed to posting without further tool calls, logging that the budget was reached.
 6. BEFORE invoking any Agent_Tool that fetches file content, THE Review_Agent SHALL pass the fetched content through the Secret_Scrubber before including it in the agent context.
 7. THE Review_Agent SHALL analyze the diff across four Review_Categories: bugs, security, style, and performance. The agent MAY interleave reasoning across categories rather than processing them sequentially.
@@ -174,6 +174,7 @@ enabled_categories: [bugs, security, style, performance]  # list of Review_Categ
 min_severity: low        # low | medium | high; default is low (all findings posted)
 auto_approve_on_no_findings: false  # bool; when true, post APPROVE instead of COMMENT on clean PRs
 tool_budget: 20          # int; max Agent_Tool calls per review job (replaces token_threshold — that field is not supported)
+max_linter_files: 5      # int; max files run_linter is called on per job; files prioritized by most changed lines
 review_draft_prs: false  # bool; when false, draft PRs are skipped
 codebase_index_enabled: false  # bool; reserved for v2 — when true, injects persistent codebase index into agent context
 ignore_patterns_extend:
@@ -262,6 +263,8 @@ ignore_patterns_override:
 
 11. THE Evaluation_Harness SHALL report a summary to the engineering team after each run including: precision, recall, and false positive count per Review_Category; mean per-dimension finding scores; average cost and latency per review; Tool_Budget consumption distribution; and delta vs. the previous run for each metric.
 
+12. THE Evaluation_Harness SHALL include a knowledge retrieval quality check: for each security Finding in the labeled corpus, it SHALL verify that at least one relevant CVE entry or coding guideline was retrieved and injected into the agent context before the Finding was produced. Findings produced without any knowledge retrieval SHALL be flagged in the eval report.
+
 ---
 
 ### Requirement 11: Knowledge Base, RAG Retrieval, and MCP-Backed Live Lookups
@@ -278,18 +281,15 @@ ignore_patterns_override:
 
 2. THE Knowledge_Base SHALL use a vector store to embed all corpora. Each entry SHALL store: source corpus name, content, language tag (where applicable), severity tag (for CVE entries), and last-updated timestamp.
 
-3. THE Review_Agent SHALL have access to the following additional Agent_Tools for knowledge retrieval:
-   - `query_knowledge_base(query, category, language)`: performs semantic similarity search against the Knowledge_Base and returns the top-5 most relevant entries for the given query, filtered by Review_Category and language. This tool counts against the Tool_Budget.
-   - `lookup_cve(pattern_or_cve_id)`: queries a live CVE/vulnerability database via MCP server (NVD API or OSV API) and returns matching advisories, severity scores, and known fix patterns. This tool counts against the Tool_Budget.
-   - `check_package_advisory(package_name, version, ecosystem)`: queries the OSV API via MCP server for known vulnerabilities in a specific package version. This tool counts against the Tool_Budget.
+3. The tools defined in Req 3 AC2 for knowledge retrieval (`query_knowledge_base`, `lookup_cve`, `check_package_advisory`) each count against the Tool_Budget. Authoritative signatures and descriptions are defined in Req 3 AC2 exclusively.
 
-4. WHEN the Review_Agent begins security analysis, THE Review_Agent SHALL call `query_knowledge_base` with the diff content as the query and `security` as the category to retrieve relevant CVE patterns and known vulnerability signatures before producing any security candidate Findings.
+4. WHEN the Review_Agent begins security analysis, THE Review_Agent SHALL call `query_knowledge_base` with the diff content as the query and `security` as the category to retrieve relevant CVE patterns and known vulnerability signatures before producing any security candidate Findings. This call is budget-exempt (see Req 3 AC4).
 
 5. WHEN the Review_Agent identifies a candidate security Finding involving a specific CVE pattern or package dependency, THE Review_Agent SHALL call `lookup_cve` or `check_package_advisory` to verify the finding against a live authoritative source before finalizing it, subject to the Tool_Budget.
 
-6. WHEN the Review_Agent begins style or bugs analysis, THE Review_Agent SHALL call `query_knowledge_base` with the relevant diff hunks as the query to retrieve applicable coding guidelines and language best practices before producing Findings in those categories.
+6. WHEN the Review_Agent begins style or bugs analysis, THE Review_Agent SHALL call `query_knowledge_base` with the relevant diff hunks as the query to retrieve applicable coding guidelines and language best practices before producing Findings in those categories. These calls are budget-exempt (see Req 3 AC4).
 
-7. BEFORE invoking `query_knowledge_base` or passing retrieved knowledge base content to the LLM provider, THE Review_Agent SHALL pass the content through the Secret_Scrubber to ensure no secrets from the internal fix knowledge base are included in the agent context.
+7. BEFORE invoking `query_knowledge_base` or passing retrieved knowledge base content to the LLM provider, THE Review_Agent SHALL pass the content through the Secret_Scrubber to ensure no secrets from the internal fix knowledge base are included in the agent context. IF the Secret_Scrubber triggers on Knowledge_Base content, THE PR_Reviewer SHALL log this as an error — it indicates a Req 9 AC7 violation in the Feedback_Store ingestion pipeline — rather than silently redacting and continuing.
 
 8. THE Knowledge_Base CVE snapshot SHALL record the date of the last refresh. WHEN the snapshot is more than 14 days old, THE PR_Reviewer SHALL log a staleness warning before each security analysis job.
 
@@ -307,4 +307,3 @@ knowledge_base:
 
 10. THE MCP servers used for live CVE and package advisory lookups SHALL be configurable. The default MCP servers SHALL be the NVD API (https://services.nvd.nist.gov) and the OSV API (https://api.osv.dev). Custom MCP server endpoints SHALL be specifiable in the Config file.
 
-11. THE Evaluation_Harness SHALL include a knowledge retrieval quality check: for each security Finding in the labeled corpus, it SHALL verify that at least one relevant CVE entry or coding guideline was retrieved and injected into the agent context before the Finding was produced. Findings produced without any knowledge retrieval SHALL be flagged in the eval report.
