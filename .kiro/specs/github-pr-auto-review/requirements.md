@@ -278,6 +278,7 @@ ignore_patterns_override:
    - Language-specific best practices for each language detected in the diff (Python, JavaScript, TypeScript, Go, Java, and others as configured)
    - An embedded CVE snapshot sourced from the NVD and GitHub Advisory Database, refreshed on a configurable schedule (default: weekly)
    - An internal fix knowledge base populated from accepted bot suggestions recorded in the Feedback_Store, capturing the pattern that was flagged and the fix that was applied
+   - A lessons-learned knowledge base of human-authored incident and code review retrospectives. Each entry SHALL be structured with four required fields: problem description, code pattern (abstract, not raw code), root cause, and resolution. Entries are managed via the CLI tool defined in Req 16 AC3.
 
 2. THE Knowledge_Base SHALL use a vector store to embed all corpora. Each entry SHALL store: source corpus name, content, language tag (where applicable), severity tag (for CVE entries), and last-updated timestamp.
 
@@ -301,6 +302,7 @@ knowledge_base:
   language_best_practices: true # bool; inject language-specific best practices
   cve_snapshot: true            # bool; enable RAG retrieval against embedded CVE corpus
   fix_knowledge_base: true      # bool; enable RAG retrieval against internal fix history
+  lessons_learned: true         # bool; enable RAG retrieval against human-authored lessons-learned corpus
   live_cve_lookup: true         # bool; enable MCP-backed live CVE/OSV lookups
   live_package_advisory: true   # bool; enable MCP-backed package advisory lookups
 ```
