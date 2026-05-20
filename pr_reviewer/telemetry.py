@@ -4,8 +4,8 @@ import logging
 import os
 
 from opentelemetry import metrics, trace
-from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExporter
-from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
 from opentelemetry.sdk.resources import Resource
@@ -44,9 +44,11 @@ def _setup_tracer(service_name: str) -> None:
     resource = Resource.create({"service.name": service_name})
     provider = TracerProvider(resource=resource)
 
-    otlp_endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4317")
+    # HTTP/protobuf exporter: endpoint must include the signal path.
+    # ACA proxies port 80 → 4318 on the collector container; path is preserved.
+    base = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4318").rstrip("/")
     try:
-        exporter = OTLPSpanExporter(endpoint=otlp_endpoint, insecure=True)
+        exporter = OTLPSpanExporter(endpoint=f"{base}/v1/traces")
         provider.add_span_processor(BatchSpanProcessor(exporter))
     except Exception:  # noqa: S110
         logging.getLogger(__name__).debug("OTLP trace exporter unavailable")
@@ -56,11 +58,11 @@ def _setup_tracer(service_name: str) -> None:
 
 def _setup_meter(service_name: str) -> None:
     resource = Resource.create({"service.name": service_name})
-    otlp_endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4317")
+    base = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4318").rstrip("/")
 
     readers = []
     try:
-        exporter = OTLPMetricExporter(endpoint=otlp_endpoint, insecure=True)
+        exporter = OTLPMetricExporter(endpoint=f"{base}/v1/metrics")
         readers.append(PeriodicExportingMetricReader(exporter, export_interval_millis=15_000))
     except Exception:  # noqa: S110
         logging.getLogger(__name__).debug("OTLP metric exporter unavailable")

@@ -2,6 +2,17 @@
 
 An LLM-backed bot that automatically reviews GitHub pull requests and posts inline code comments with categorised findings — bugs, security issues, style violations, and performance problems. Includes corrected code suggestions developers can apply with one click.
 
+## Deployment
+
+The service runs in two modes — both use the same codebase and the same GitHub App:
+
+| Mode | Command | When to use |
+|---|---|---|
+| **Local** | `./launch` | Development, testing, trying it out — everything runs on your machine via docker-compose; cloudflared tunnels GitHub webhooks to localhost |
+| **Azure** | `./infra/scripts/deploy.sh` | Production — Azure Container Apps, managed PostgreSQL, Redis, and ChromaDB; stable webhook URL; no cloudflared needed |
+
+The two modes are independent. Switch between them freely — no code changes required.
+
 ---
 
 ## How it works
@@ -34,7 +45,7 @@ Inline comments on the PR with suggestions developers can apply
 
 ---
 
-## Running locally
+## Running locally (development)
 
 ### Step 1 — Create a GitHub App (one-time)
 
@@ -140,6 +151,122 @@ To verify the webhook is firing: check `logs/cloudflared.log` or watch `logs/api
 
 ---
 
+## Deploying to Azure (production)
+
+The Azure deployment targets **Azure Container Apps** with managed PostgreSQL, Redis, and ChromaDB, all provisioned by Terraform. The GitHub App webhook URL is stable (no cloudflared needed).
+
+### Prerequisites
+
+| Tool | Install |
+|---|---|
+| Azure CLI | `brew install azure-cli` then `az login` |
+| Terraform ≥ 1.7 | `brew install terraform` |
+| Podman | `brew install podman` then `podman machine init && podman machine start` |
+
+### Step 1 — Create a GitHub App (one-time)
+
+Follow the same GitHub App setup as the local instructions above, with one difference:
+
+| Field | Value |
+|---|---|
+| Homepage URL | `https://<your-api-fqdn>` (fill in after deploy) |
+| Webhook URL | leave blank — fill in after first deploy |
+
+### Step 2 — Bootstrap Terraform state storage (one-time)
+
+Creates the Azure Storage account that holds Terraform state. Run once only.
+
+```bash
+az login
+./infra/scripts/bootstrap-state.sh
+```
+
+### Step 3 — Populate secrets
+
+Fill in `infra/scripts/set-secrets.sh` (gitignored). Most values are already pre-populated from `.env`.
+
+```bash
+# Open the file and verify all values are correct before deploying
+open infra/scripts/set-secrets.sh
+```
+
+### Step 4 — Deploy
+
+```bash
+podman machine start
+./infra/scripts/deploy.sh
+```
+
+That's it. The script builds the image, pushes it to ACR, runs `terraform plan`, and applies. The image tag defaults to the current git short SHA.
+
+The first deploy takes ~10 minutes (PostgreSQL and Redis provisioning). Subsequent deploys take under 2 minutes.
+
+At the end you'll see:
+
+```
+============================================
+ Deployment complete
+ Image:  ttmt03c83eacr.azurecr.io/pr-reviewer:<sha>
+ API:    https://ca-pr-reviewer-api.<...>.azurecontainerapps.io
+ Webhook URL (set in GitHub App): https://ca-pr-reviewer-api.<...>.azurecontainerapps.io/webhook/github
+
+ To seed the knowledge base:
+   az containerapp job start --name job-pr-reviewer-kb-seed --resource-group titanium-team-03-rg
+============================================
+```
+
+#### Deploy options
+
+```bash
+./infra/scripts/deploy.sh                  # build + apply (tag = git SHA)
+./infra/scripts/deploy.sh --tag v1.2.3     # explicit image tag
+./infra/scripts/deploy.sh --skip-build     # infra-only change, re-use current image
+./infra/scripts/deploy.sh --seed           # build + apply + trigger KB seed job
+./infra/scripts/deploy.sh --plan-only      # show terraform plan without applying
+```
+
+### Step 5 — Seed ChromaDB (first deploy only)
+
+ChromaDB starts empty. Run the seed job to populate the CVE snapshot and all KB corpora:
+
+```bash
+az containerapp job start --name job-pr-reviewer-kb-seed --resource-group titanium-team-03-rg
+```
+
+Or use `--seed` in the deploy command to do it automatically. Monitor progress:
+
+```bash
+az containerapp job execution list --name job-pr-reviewer-kb-seed --resource-group titanium-team-03-rg -o table
+```
+
+Re-run this command whenever you want to refresh the CVE snapshot.
+
+### Step 6 — Wire the webhook URL into GitHub
+
+1. Copy the webhook URL printed at the end of the deploy script
+2. Go to: **GitHub → Settings → Developer settings → GitHub Apps → Edit**
+3. Set **Webhook URL** to the printed value → **Save changes**
+
+Unlike the local setup, this URL is **permanent** — it does not change on restart.
+
+### Step 7 — Install the app on a repository
+
+Same as the local instructions: **GitHub App → Install App → select repository → Install**.
+
+### Re-deploying after a code change
+
+```bash
+./infra/scripts/deploy.sh
+```
+
+For an infra-only change (no code changed):
+
+```bash
+./infra/scripts/deploy.sh --skip-build
+```
+
+---
+
 ## Using it day-to-day
 
 Once installed, **you do nothing**. Open a PR — the bot reviews it automatically.
@@ -213,9 +340,31 @@ The default ignore list covers: `package-lock.json`, `yarn.lock`, `*.lock`, `ven
 
 ### Health check
 
+**Local:**
 ```bash
 curl http://localhost:8000/health
 # {"status": "ok", "db": "ok", "redis": "ok", "chromadb": "ok"}
+```
+
+**Azure:**
+```bash
+curl https://<api-fqdn>/health
+```
+
+### Viewing logs (Azure)
+
+```bash
+# API
+az containerapp logs show --name ca-pr-reviewer-api --resource-group titanium-team-03-rg --follow
+
+# Review worker
+az containerapp logs show --name ca-pr-reviewer-worker-review --resource-group titanium-team-03-rg --follow
+```
+
+### Refreshing the CVE snapshot (Azure)
+
+```bash
+az containerapp job start --name job-pr-reviewer-kb-seed --resource-group titanium-team-03-rg
 ```
 
 ### Running the evaluation harness
@@ -352,6 +501,8 @@ A developer using Claude Code gets a first-pass review during coding — catchin
 The service is a single FastAPI application with Celery workers. See [`.kiro/specs/github-pr-auto-review/design.md`](.kiro/specs/github-pr-auto-review/design.md) for the full architecture, data models, and sequence diagrams.
 
 **Stack:** Python 3.12 · FastAPI · Celery · Redis · PostgreSQL · ChromaDB · LangChain · Azure OpenAI GPT-4o · Azure AI Foundry (Claude, eval judge) · OpenTelemetry
+
+**Azure infrastructure:** Azure Container Apps · Azure Database for PostgreSQL Flexible Server · Azure Cache for Redis · Azure Container Registry · Azure Files (ChromaDB persistence + OTel config) · Terraform · Podman (image build)
 
 **v1** delivers the complete review pipeline: webhook receiver, LangChain ReviewAgent, RAG knowledge base, feedback loop, and evaluation harness.
 

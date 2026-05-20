@@ -434,6 +434,37 @@ Implement an LLM-backed GitHub PR review service in phases: v1 delivers the comp
   - [x] 31.9 Switch primary LLM to Azure AI Foundry Claude via `litellm` — `make_llm()` now tries `AZURE_ANTHROPIC_API_KEY` + `AZURE_ANTHROPIC_ENDPOINT` first, falls back to Azure OpenAI
   _Requirements: 6.1, 6.3_
 
+- [x] 32. Pre-deployment runtime bug fixes (surfaced during live PR review run)
+  - [x] 32.1 Fix `diff_parser.py` — raise `_MAX_CHANGED_LINES` from 3000 → 10000; the old limit truncated at ~12 files and excluded `titanium.js` (the intentionally-vulnerable test target)
+  - [x] 32.2 Fix `job_processor.py` — add truncation warning log after `DiffParser.parse()` listing included filenames when `diff.truncated` is True
+  - [x] 32.3 Fix `github_client.py` — add `timeout=30.0` to `httpx.Client`; no timeout caused `ReadTimeout` when posting large review payloads (28 findings) to GitHub
+
+- [x] 33. Azure Container Apps deployment infrastructure
+  - [x] 33.1 Create `Dockerfile` — python:3.12-slim base; uv for dependency install (`--frozen --no-dev`); copies `pr_reviewer/`, `alembic/`, `alembic.ini`; single image, role selected via CMD override in entrypoint
+  - [x] 33.2 Create `docker-entrypoint.sh` — case/esac dispatcher: `api` (migrate + uvicorn), `worker-review`, `worker-feedback`, `worker-indexer`, `beat` (celery), `seed-kb` (kb bootstrap + sync), `migrate` (alembic only)
+  - [x] 33.3 Create `.dockerignore` — excludes `.venv/`, `__pycache__`, test dirs, `infra/`, `.env*` (not `.env.example`), logs, data
+  - [x] 33.4 Create `infra/terraform/terraform.tf` — azurerm ~> 3.100 + random ~> 3.6; Azure Storage backend (`sttfstateprreviewer/tfstate/pr-reviewer.tfstate`); data sources for RG and ACR; user-assigned managed identity for AcrPull; Log Analytics workspace; `required_version >= 1.7`
+  - [x] 33.5 Create `infra/terraform/variables.tf` — all input variables with descriptions and sensitive markers; `image_tag` validation (non-empty); `azure_openai_endpoint` validation (must start with `https://`)
+  - [x] 33.6 Create `infra/terraform/locals.tf` — `prefix`, `image_ref`, `db_url`, `redis_url`, `chromadb_url`, `otel_endpoint`; `urlencode()` applied to DB password and Redis access key in URL construction to handle base64 special characters
+  - [x] 33.7 Create `infra/terraform/postgres.tf` — `azurerm_postgresql_flexible_server` (B_Standard_B1ms, v16, 32 GB); database resource; firewall rule allowing Azure-originated traffic (0.0.0.0–0.0.0.0)
+  - [x] 33.8 Create `infra/terraform/redis.tf` — `azurerm_redis_cache` Basic C1; `non_ssl_port_enabled = false`; TLS 1.2 minimum
+  - [x] 33.9 Create `infra/terraform/storage.tf` — storage account + share for ChromaDB data (50 GB, ReadWrite); share for OTel config (1 GB, ReadOnly); `azurerm_storage_share_file` uploads local `otel/collector-config.yml`; both shares mounted into the ACA environment
+  - [x] 33.10 Create `infra/terraform/aca.tf` — ACA environment (Log Analytics linked); 7 container apps: `otel-collector` (internal, port 4318), `chromadb` (internal, Azure Files volume), `api` (external ingress, min 1/max 3 replicas), `worker-review`, `worker-feedback`, `worker-indexer`, `beat` (all internal, min/max 1); ACA Job `kb-seed` (manual trigger, 600s timeout)
+  - [x] 33.11 Create `infra/terraform/outputs.tf` — `api_fqdn`, `api_fqdn_raw`, `postgres_fqdn`, `redis_hostname`, `chromadb_internal_fqdn`, `kb_seed_job_trigger`, `otel_collector_endpoint`, `acr_login_server`
+  - [x] 33.12 Create `infra/scripts/bootstrap-state.sh` — one-time creation of Azure Storage account and container for Terraform state backend
+  - [x] 33.13 Create `infra/scripts/build-push.sh` — Podman build (`--platform linux/amd64`) + push to ACR using `az acr login --expose-token` with fixed username `00000000-0000-0000-0000-000000000000`
+  - [x] 33.14 Create `infra/scripts/set-secrets.sh` (gitignored + dockerignored) — exports all `TF_VAR_*` secrets; pre-populated from `.env`
+  - [x] 33.15 Create `infra/scripts/deploy.sh` — single-command deployment: load secrets → build + push image (tag = git short SHA by default) → `terraform init -reconfigure` → `terraform plan` → `terraform apply`; flags: `--tag`, `--skip-build`, `--seed`, `--plan-only`; prints API URL and webhook URL on completion
+  - [x] 33.16 Add Terraform tests in `infra/terraform/tests/` — `smoke.tftest.hcl` (full plan with mocked providers), `locals.tftest.hcl` (prefix, image_ref, db_name, db_user assertions), `variable_validation.tftest.hcl` (empty tag rejected, HTTP endpoint rejected, valid values accepted); all 10 tests pass
+  - [x] 33.17 Update `.gitignore` — add Terraform state files, `.terraform/`, `.terraform.lock.hcl`, `set-secrets.sh`
+  - [x] 33.18 Update `README.md` — replace 8-step Azure deployment section with 7-step flow where Step 4 is a single `./infra/scripts/deploy.sh` command; document all deploy flags; update prerequisites to Terraform ≥ 1.7 and Podman
+
+- [x] 34. Fix OTel transport and wire setup_telemetry into all entrypoints
+  - [x] 34.1 Fix `telemetry.py` — switch from `otlp.proto.grpc.*` to `otlp.proto.http.*` exporters; ACA internal ingress exposes port 4318 (HTTP/protobuf) only — gRPC on 4317 is not reachable; gRPC exporter class ignores `OTEL_EXPORTER_OTLP_PROTOCOL` env var
+  - [x] 34.2 Fix `telemetry.py` — HTTP OTLP exporters require the full path in `endpoint`; append `/v1/traces` and `/v1/metrics` to `OTEL_EXPORTER_OTLP_ENDPOINT`; update default port from 4317 → 4318; remove `insecure=True` (not a parameter on the HTTP exporter)
+  - [x] 34.3 Fix `api/main.py` — `setup_telemetry("pr-reviewer-api")` was never called; OTel was entirely inactive in the API process; call it inside `build_app()` before the FastAPI instance is created
+  - [x] 34.4 Fix `workers/celery_app.py` — add `worker_process_init` signal handler `_setup_worker_telemetry` that calls `setup_telemetry("pr-reviewer-worker")`; OTel was never initialised in any worker process
+
 ## Notes
 
 - Tasks marked **[v2]** depend on all v1 tasks completing first; v2 may be deferred until the Feedback_Store has accumulated meaningful signal (3–6 months of reviews)

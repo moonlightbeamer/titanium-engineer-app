@@ -78,14 +78,33 @@ def _handle_task_failure(
     if not all([installation_id, repo_full_name, pr_number]):
         return
 
-    client = GitHubAPIClient(installation_id=installation_id)
-    client.post_review(
-        repo=repo_full_name,
-        pr_number=pr_number,
-        body="Review job failed after maximum retries. Please check the service logs.",
-        event="COMMENT",
-        comments=[],
-    )
+    try:
+        from redis import Redis  # noqa: PLC0415
+
+        client = GitHubAPIClient(
+            installation_id=installation_id,
+            redis_client=Redis.from_url(
+                os.getenv("REDIS_URL", "redis://localhost:6379/0"), decode_responses=True
+            ),
+            app_id=os.environ["GITHUB_APP_ID"],
+            private_key=os.environ["GITHUB_APP_PRIVATE_KEY"],
+        )
+        client.post_review(
+            repo=repo_full_name,
+            pr_number=pr_number,
+            body="Review job failed after maximum retries. Please check the service logs.",
+            event="COMMENT",
+            comments=[],
+        )
+    except Exception as notify_err:
+        _logger.error(f"Dead-letter GitHub notify failed: {notify_err}")
 
 
 signals.task_failure.connect(_handle_task_failure)
+
+
+@signals.worker_process_init.connect
+def _setup_worker_telemetry(**_kwargs: Any) -> None:
+    from pr_reviewer.telemetry import setup_telemetry  # noqa: PLC0415
+
+    setup_telemetry("pr-reviewer-worker")

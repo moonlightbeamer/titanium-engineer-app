@@ -1,0 +1,19 @@
+# Copy to terraform.tfvars and fill in values — DO NOT commit terraform.tfvars to git
+
+resource_group_name = "titanium-team-03-rg"
+acr_name            = "ttmt03c83eacr"
+acr_resource_group  = "titanium-team-03-rg"
+image_tag           = "latest"
+
+# Get from Azure Portal → your OpenAI resource → Keys and Endpoint
+azure_openai_endpoint              = "https://lgts1tetamoai01.openai.azure.com"
+azure_openai_deployment_name       = "gpt-5.1"
+azure_openai_api_version           = "2024-08-01-preview"
+azure_openai_embedding_deployment  = "text-embedding-3-large"
+
+# Sensitive — set as TF_VAR_* environment variables instead of storing here:
+#   export TF_VAR_db_admin_password="..."
+#   export TF_VAR_azure_openai_api_key="..."
+#   export TF_VAR_github_app_id="..."
+#   export TF_VAR_github_app_private_key="$(cat /path/to/private-key.pem)"
+#   export TF_VAR_github_webhook_secret="..."

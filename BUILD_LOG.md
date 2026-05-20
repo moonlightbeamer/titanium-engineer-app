@@ -732,3 +732,90 @@ These bugs were hidden during earlier runs because the LLM call (Step 3 of `Revi
 **Tests:** 272 unit tests passing; no regressions.
 
 **Files modified:** `pr_reviewer/agents/tools.py`, `pr_reviewer/store/github_client.py`, `.kiro/specs/github-pr-auto-review/tasks.md` (task 31 added and marked complete).
+
+---
+
+## 2026-05-20
+
+### Task 32 — Pre-deployment runtime bug fixes
+
+Three bugs surfaced during the first live end-to-end PR review run against a real repository.
+
+**Fix 1 — Diff truncation excluded the test target (`titanium.js`)**
+- `_MAX_CHANGED_LINES = 3000` in `diff_parser.py` truncated the diff at ~12 files on a large PR, silently dropping `titanium.js` (the intentionally-vulnerable test file that should trigger security findings).
+- Raised to `_MAX_CHANGED_LINES = 10000`.
+- Added truncation warning log in `job_processor.py` that lists all included filenames when `diff.truncated` is True, so truncation is always visible in logs.
+
+**Fix 2 — `post_review` hanging with `ReadTimeout`**
+- `httpx.Client` in `github_client.py` had no timeout configured. Posting a 28-finding review payload to GitHub's API exceeded the default wait, causing the worker to hang until Celery's task soft timeout killed it.
+- Added `timeout=30.0` to the `httpx.Client` constructor.
+
+**Files modified:** `pr_reviewer/components/diff_parser.py`, `pr_reviewer/workers/job_processor.py`, `pr_reviewer/store/github_client.py`.
+
+---
+
+### Task 33 — Azure Container Apps deployment infrastructure
+
+Full end-to-end Azure deployment pipeline: single Docker image → ACR → Terraform-managed Azure Container Apps with managed PostgreSQL, Redis, ChromaDB, and OTel Collector.
+
+**Container image**
+- Created `Dockerfile` — `python:3.12-slim` base with uv for reproducible installs (`--frozen --no-dev`). Single image; role selected at runtime via CMD override.
+- Created `docker-entrypoint.sh` — `case`/`esac` dispatcher routing `api`, `worker-review`, `worker-feedback`, `worker-indexer`, `beat`, `seed-kb`, and `migrate` to the correct process. `api` runs Alembic migrations before starting uvicorn.
+- Created `.dockerignore` — excludes `infra/`, `.env*`, `.venv/`, test dirs, data, and logs. Secrets (`set-secrets.sh`) are inside `infra/` so they are automatically excluded.
+
+**Terraform infrastructure** (`infra/terraform/`)
+- `terraform.tf` — azurerm `~> 3.100`, random `~> 3.6`; Azure Storage backend; user-assigned managed identity with AcrPull role (avoids storing ACR admin credentials); Log Analytics workspace; `required_version >= 1.7` (needed for `mock_provider` in tests).
+- `variables.tf` — all input variables; `image_tag` validated non-empty; `azure_openai_endpoint` validated `https://`-only; sensitive variables marked `sensitive = true`.
+- `locals.tf` — constructs `db_url` and `redis_url` with `urlencode()` on the password/access key; Azure Redis keys are base64-encoded and contain `+`/`/` which break URL parsing without encoding. `chromadb_url` includes explicit `:80` so `urlparse()` resolves the port correctly.
+- `postgres.tf` — PostgreSQL Flexible Server v16, B_Standard_B1ms, 32 GB; firewall rule `0.0.0.0–0.0.0.0` allows ACA outbound (ACA has no fixed IPs without VNet integration).
+- `redis.tf` — Basic C1; `non_ssl_port_enabled = false` (the deprecated `enable_non_ssl_port` attribute was used initially and corrected during triple-check); TLS 1.2.
+- `storage.tf` — storage account + Azure File shares for ChromaDB data (50 GB, ReadWrite) and OTel config (1 GB, ReadOnly); `azurerm_storage_share_file` uploads local `otel/collector-config.yml` at `terraform apply` time.
+- `aca.tf` — ACA environment linked to Log Analytics; 7 container apps: `otel-collector` (internal, port 80 → 4318), `chromadb` (internal, Azure Files mount), `api` (external HTTPS, min 1/max 3), `worker-review`/`worker-feedback`/`worker-indexer`/`beat` (all internal, single replica); ACA Job `job-pr-reviewer-kb-seed` (manual trigger, 600s timeout) runs `seed-kb` entrypoint.
+- `outputs.tf` — `api_fqdn`, `api_fqdn_raw`, `kb_seed_job_trigger` (full `az containerapp job start` command), `otel_collector_endpoint`, `acr_login_server`.
+
+**Bug fixes during triple-check**
+- `redis.tf`: `enable_non_ssl_port` → `non_ssl_port_enabled` (deprecated attribute name in azurerm ≥ 3.47; would have caused `terraform plan` to error).
+- `locals.tf`: wrapped Redis primary access key and DB password with `urlencode()` in connection URL construction; Azure Redis keys are base64-encoded and routinely contain URL-breaking characters.
+
+**Terraform tests** (`infra/terraform/tests/`)
+- `smoke.tftest.hcl` — full plan with mocked azurerm and random providers; no real Azure credentials needed.
+- `locals.tftest.hcl` — asserts `local.prefix`, `local.image_ref`, `local.db_name`, `local.db_user` at plan time.
+- `variable_validation.tftest.hcl` — verifies empty `image_tag` is rejected, HTTP (non-HTTPS) `azure_openai_endpoint` is rejected, and valid values are accepted.
+- All 10 tests pass (`terraform test`).
+
+**Deployment scripts** (`infra/scripts/`)
+- `bootstrap-state.sh` — one-time creation of Terraform state backend (Standard LRS, TLS 1.2, no public blob access).
+- `build-push.sh` — Podman build (`--platform linux/amd64`) + push to ACR via `az acr login --expose-token`; username is the fixed literal `00000000-0000-0000-0000-000000000000` (required by Azure's token-based auth, not a real UUID).
+- `set-secrets.sh` — gitignored and dockerignored; exports all `TF_VAR_*` values; pre-populated from `.env`.
+- `deploy.sh` — single-command deployment: sources secrets → build + push (tag defaults to `git rev-parse --short HEAD`) → `terraform init -reconfigure` → plan → apply → prints API URL and webhook URL. Flags: `--tag`, `--skip-build`, `--seed`, `--plan-only`.
+
+**README update**
+- Azure deployment section reduced from 8 manual steps to 4: create GitHub App → bootstrap state → populate secrets → `./infra/scripts/deploy.sh`. Deploy options table added.
+
+**Files created:** `Dockerfile`, `docker-entrypoint.sh`, `.dockerignore`, `infra/terraform/terraform.tf`, `infra/terraform/variables.tf`, `infra/terraform/locals.tf`, `infra/terraform/postgres.tf`, `infra/terraform/redis.tf`, `infra/terraform/storage.tf`, `infra/terraform/aca.tf`, `infra/terraform/outputs.tf`, `infra/terraform/tests/smoke.tftest.hcl`, `infra/terraform/tests/locals.tftest.hcl`, `infra/terraform/tests/variable_validation.tftest.hcl`, `infra/scripts/bootstrap-state.sh`, `infra/scripts/build-push.sh`, `infra/scripts/set-secrets.sh` (gitignored), `infra/scripts/deploy.sh`. **Files modified:** `.gitignore`, `README.md`.
+
+---
+
+### Task 34 — OTel HTTP transport fix and setup_telemetry wiring
+
+Two independent bugs meant OpenTelemetry was completely inactive in every deployed process.
+
+**Bug 1 — Wrong transport protocol**
+- `telemetry.py` imported from `opentelemetry.exporter.otlp.proto.grpc.*` (gRPC, default port 4317). The ACA OTel collector's internal ingress is configured for HTTP/protobuf on port 4318 only — ACA supports a single ingress port per app, and gRPC on 4317 is not reachable.
+- The `OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf` env var set by Terraform has no effect when the gRPC exporter class is instantiated directly; the protocol is baked into the import path.
+- Fixed by switching to `opentelemetry.exporter.otlp.proto.http.*` exporters.
+- HTTP exporters require the full signal path in `endpoint` (gRPC uses a base URL). Appended `/v1/traces` and `/v1/metrics` to `OTEL_EXPORTER_OTLP_ENDPOINT`. Removed `insecure=True` (not a parameter on the HTTP exporter class; security is determined by the URL scheme).
+- Updated default endpoint port from 4317 → 4318 for local development.
+
+**Bug 2 — `setup_telemetry()` never called**
+- The function was implemented in task 2 but no code path ever called it, so no `TracerProvider` or `MeterProvider` was ever registered in any process.
+- `api/main.py` — added `setup_telemetry("pr-reviewer-api")` at the top of `build_app()`.
+- `workers/celery_app.py` — added `_setup_worker_telemetry` connected to the `worker_process_init` signal; each worker process initialises its own provider on startup. Import deferred inside the handler to avoid circular imports at module load time.
+
+**Tests:** Verified clean imports (`uv run python -c "from pr_reviewer.api.main import build_app"`). No regressions in existing 272 unit tests.
+
+**Files modified:** `pr_reviewer/telemetry.py`, `pr_reviewer/api/main.py`, `pr_reviewer/workers/celery_app.py`.
+
+---
+
+**Running totals:** 272 unit tests · 6 integration tests (require live Postgres) · 3 pre-existing OTel isolation failures · lint clean · 10 Terraform tests passing · tasks 32–34 complete
