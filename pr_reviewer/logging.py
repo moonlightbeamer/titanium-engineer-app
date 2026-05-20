@@ -63,7 +63,6 @@ class RateLimitedLogger:
             handler.setFormatter(_JsonFormatter())
             handler.addFilter(_TraceInjectingFilter())
             self._logger.addHandler(handler)
-            self._logger.propagate = False
         self._seen: dict[str, float] = {}
 
     def _should_emit(self, msg: str) -> bool:

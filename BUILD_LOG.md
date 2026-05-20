@@ -91,3 +91,48 @@ Chronological record of implementation steps. Appended after each task completes
 ---
 
 **Running totals:** 38 unit tests · 6 integration tests · 0 failures · lint clean
+
+---
+
+### Task 6 — JobQueue / Celery configuration
+
+- Created `pr_reviewer/workers/celery_app.py`:
+  - `celery_app` with broker/backend from `REDIS_URL` env var.
+  - `REVIEW_JOBS_CONCURRENCY=10`, `FEEDBACK_JOBS_CONCURRENCY=5`, `INDEXER_JOBS_CONCURRENCY=2` as testable module constants.
+  - `task_acks_late=True` — messages re-queued if worker crashes before ACK.
+  - `task_routes` mapping all three task names to their respective queues.
+  - `_handle_task_failure` — connected to `signals.task_failure`; skips non-exhausted retries; extracts `installation_id`/`repo`/`pr_number` from payload; calls `GitHubAPIClient.post_review` with a failure message; calls `_get_job` (stub for future DB status update).
+- Updated `pr_reviewer/workers/tasks.py`: now imports `celery_app` from `celery_app.py`; added `process_indexer_job` (queue `indexer_jobs`); added `max_retries=3` to all tasks; added `_queue_depth` UpDownCounter and `_on_task_prerun` (connected to `signals.task_prerun`) to decrement gauge on task pickup.
+- **Fix encountered:** `RateLimitedLogger.error()` doesn't support positional format args — fixed to use f-string.
+- **Fix encountered:** `@patch` of a lazily-imported name fails; moved `GitHubAPIClient` import to module level (no circular import).
+- **Fix encountered:** test 6.6 with `@patch` of the signal handler would compare mock vs original — rewrote to import without patch and check `signals.task_failure.receivers` directly.
+
+**Tests:** 8 unit tests — all green (0.32s). Lint clean.
+
+**Files created/modified:** `pr_reviewer/workers/celery_app.py`, `pr_reviewer/workers/tasks.py`, `tests/unit/test_job_queue.py`.
+
+---
+
+**Running totals:** 46 unit tests · 6 integration tests · 0 failures · lint clean
+
+---
+
+### Task 7 — DiffParser
+
+- Pre-requisite: created `pr_reviewer/config/schema.py` — Pydantic frozen `Config` model with `MCPServersConfig` and `KnowledgeBaseConfig` nested models; all fields with defaults. (Full ConfigLoader in task 9.)
+- Created `pr_reviewer/components/diff_parser.py`:
+  - `DEFAULT_IGNORE_PATTERNS` — 10 common patterns (`*.lock`, `*.min.js`, `go.sum`, etc.).
+  - `_resolve_patterns(config)` — returns override list if set; extends defaults if only `extend` set; logs ERROR "conflicting ignore fields" if both set.
+  - `ChangeType(StrEnum)`: `ADDED`, `REMOVED`, `CONTEXT`.
+  - Frozen dataclasses: `DiffLine`, `Hunk`, `ChangedFile` (with `github_position_map`), `StructuredDiff`.
+  - `DiffParser.parse()` — splits diff into per-file blocks; skips binary files and ignored paths; tracks GitHub position (1-indexed, hunk header = position, every line increments); truncates at 3000 changed lines and sets `truncation_notice`.
+  - `_detect_language()` — maps file extension to language string via `_LANGUAGE_MAP`.
+- **Fix encountered:** `RateLimitedLogger` set `self._logger.propagate = False` — this prevented pytest `caplog` from capturing log records. Removed the `propagate = False` line; no side effect since root logger has no handler in normal operation.
+
+**Tests:** 9 unit tests — all green (0.03s). Lint clean.
+
+**Files created:** `pr_reviewer/config/__init__.py`, `pr_reviewer/config/schema.py`, `pr_reviewer/components/diff_parser.py`, `tests/unit/test_diff_parser.py`. Modified: `pr_reviewer/logging.py`.
+
+---
+
+**Running totals:** 55 unit tests · 6 integration tests · 0 failures · lint clean

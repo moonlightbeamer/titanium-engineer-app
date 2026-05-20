@@ -69,29 +69,29 @@ Implement an LLM-backed GitHub PR review service in phases: v1 delivers the comp
   - [x] 5.13 Implement `pr_reviewer/api/webhook.py` — FastAPI router at `POST /webhook/github`; HMAC-SHA256 with constant-time compare; slowapi `Limiter` at 100 req/min per source IP; draft check; `review.queue_depth` gauge on enqueue
   _Requirements: 1.2, 1.3, 1.4, 1.14_
 
-- [ ] 6. JobQueue
-  - [ ] 6.1 Test: `test_review_task_routes_to_review_jobs_queue` — `process_review_job.apply_async(...)` → task visible on `review_jobs`
-  - [ ] 6.2 Test: `test_feedback_task_routes_to_feedback_jobs_queue`
-  - [ ] 6.3 Test: `test_indexer_task_routes_to_indexer_jobs_queue`
-  - [ ] 6.4 Test: `test_review_jobs_max_10_concurrent` — Celery worker config for `review_jobs` has `concurrency=10`
-  - [ ] 6.5 Test: `test_task_retried_up_to_3_times_on_failure` — task raises `RuntimeError` → retried exactly 3 times
-  - [ ] 6.6 Test: `test_dead_letter_status_set_after_exhausted_retries` — after 3 retries, `jobs.status` updated to `dead_letter`
-  - [ ] 6.7 Test: `test_failure_comment_posted_on_dead_letter` — dead-letter handler calls `GitHubAPIClient.post_review` with failure message
-  - [ ] 6.8 Test: `test_queue_depth_gauge_decremented_on_task_start` — `review.queue_depth` decremented when worker picks up task
-  - [ ] 6.9 Implement `pr_reviewer/workers/celery_app.py` — `celery_app` with three named queues (`review_jobs` concurrency 10, `feedback_jobs` concurrency 5, `indexer_jobs` concurrency 2); `task_acks_late=True`; dead-letter handler via `task_failure` signal
+- [x] 6. JobQueue
+  - [x] 6.1 Test: `test_review_task_routes_to_review_jobs_queue` — `process_review_job.apply_async(...)` → task visible on `review_jobs`
+  - [x] 6.2 Test: `test_feedback_task_routes_to_feedback_jobs_queue`
+  - [x] 6.3 Test: `test_indexer_task_routes_to_indexer_jobs_queue`
+  - [x] 6.4 Test: `test_review_jobs_max_10_concurrent` — Celery worker config for `review_jobs` has `concurrency=10`
+  - [x] 6.5 Test: `test_task_retried_up_to_3_times_on_failure` — task raises `RuntimeError` → retried exactly 3 times
+  - [x] 6.6 Test: `test_dead_letter_status_set_after_exhausted_retries` — after 3 retries, `jobs.status` updated to `dead_letter`
+  - [x] 6.7 Test: `test_failure_comment_posted_on_dead_letter` — dead-letter handler calls `GitHubAPIClient.post_review` with failure message
+  - [x] 6.8 Test: `test_queue_depth_gauge_decremented_on_task_start` — `review.queue_depth` decremented when worker picks up task
+  - [x] 6.9 Implement `pr_reviewer/workers/celery_app.py` — `celery_app` with three named queues (`review_jobs` concurrency 10, `feedback_jobs` concurrency 5, `indexer_jobs` concurrency 2); `task_acks_late=True`; dead-letter handler via `task_failure` signal
   _Requirements: 1.4, 1.12, 1.13, 8.3_
 
-- [ ] 7. DiffParser
-  - [ ] 7.1 Test: `test_added_line_has_correct_github_position_index` — `+` lines have monotonically increasing position offset matching GitHub's position numbering
-  - [ ] 7.2 Test: `test_binary_file_not_in_changed_files` — binary marker → in `skipped_files`, absent from `changed_files`
-  - [ ] 7.3 Test: `test_truncation_at_exactly_3000_changed_lines` — 3001 changed lines → `truncated=True`, exactly 3000 in output (Property 2)
-  - [ ] 7.4 Test: `test_truncation_notice_present_in_output` — `StructuredDiff.truncation_notice` is non-empty when `truncated=True`
-  - [ ] 7.5 Test: `test_override_wins_over_extend_with_warn` — both fields in Config → `override` list used, WARN logged containing "conflicting ignore fields" (Property 3)
-  - [ ] 7.6 Test: `test_extend_merged_with_defaults` — only `extend` present → default + extend patterns both applied
-  - [ ] 7.7 Test: `test_file_matching_ignore_pattern_excluded` — file path matches ignore glob → not in `changed_files`
-  - [ ] 7.8 Test: `test_language_detected_from_file_extension` — `.py` → `"python"`; `.ts` → `"typescript"`
-  - [ ] 7.9 Test: `test_github_position_map_key_is_line_number_value_is_position`
-  - [ ] 7.10 Implement `pr_reviewer/components/diff_parser.py` — `DiffParser` with `parse(raw_diff: str, config: Config) -> StructuredDiff`; frozen data classes: `StructuredDiff`, `ChangedFile`, `Hunk`, `DiffLine`; `ChangeType` enum; pure function, no I/O
+- [x] 7. DiffParser
+  - [x] 7.1 Test: `test_added_line_has_correct_github_position_index` — `+` lines have monotonically increasing position offset matching GitHub's position numbering
+  - [x] 7.2 Test: `test_binary_file_not_in_changed_files` — binary marker → in `skipped_files`, absent from `changed_files`
+  - [x] 7.3 Test: `test_truncation_at_exactly_3000_changed_lines` — 3001 changed lines → `truncated=True`, exactly 3000 in output (Property 2)
+  - [x] 7.4 Test: `test_truncation_notice_present_in_output` — `StructuredDiff.truncation_notice` is non-empty when `truncated=True`
+  - [x] 7.5 Test: `test_override_wins_over_extend_with_warn` — both fields in Config → `override` list used, WARN logged containing "conflicting ignore fields" (Property 3)
+  - [x] 7.6 Test: `test_extend_merged_with_defaults` — only `extend` present → default + extend patterns both applied
+  - [x] 7.7 Test: `test_file_matching_ignore_pattern_excluded` — file path matches ignore glob → not in `changed_files`
+  - [x] 7.8 Test: `test_language_detected_from_file_extension` — `.py` → `"python"`; `.ts` → `"typescript"`
+  - [x] 7.9 Test: `test_github_position_map_key_is_line_number_value_is_position`
+  - [x] 7.10 Implement `pr_reviewer/components/diff_parser.py` — `DiffParser` with `parse(raw_diff: str, config: Config) -> StructuredDiff`; frozen data classes: `StructuredDiff`, `ChangedFile`, `Hunk`, `DiffLine`; `ChangeType` enum; pure function, no I/O
   _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.8_
 
 - [ ] 8. SecretScrubber
