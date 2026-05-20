@@ -200,12 +200,22 @@ The evaluation harness is a standalone tool in `eval/` that measures finding qua
 
 **Prerequisites**
 
-```bash
-# Install Inspect AI (the eval runner)
-pip install inspect-ai
+Everything the eval harness needs is installed automatically when you run `uv sync` inside the `eval/` directory — `inspect-ai`, `litellm`, and their dependencies are declared in `eval/pyproject.toml` (created in task 18). No separate manual installs needed.
 
-# The app must have processed at least some PRs so findings are in the database,
-# OR you seed the corpus manually (see eval/README.md once implemented)
+```bash
+cd eval && uv sync
+```
+
+One thing you do need to obtain separately: **a second LLM API key from a different provider**. The bias-detection judge must use a different model family than GPT-4o (e.g., Claude Sonnet) to avoid same-family scoring bias. Add it to your `.env`:
+
+```bash
+ANTHROPIC_API_KEY=sk-ant-...   # used by the security bias-detection judge
+```
+
+The database must also be running — `./launch --services-only` is enough (no full app needed):
+
+```bash
+./launch --services-only   # starts PostgreSQL; eval harness reads findings from it
 ```
 
 **When to run it**
