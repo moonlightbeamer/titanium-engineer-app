@@ -153,3 +153,25 @@ Chronological record of implementation steps. Appended after each task completes
 ---
 
 **Running totals:** 63 unit tests · 6 integration tests · 0 failures · lint clean
+
+---
+
+### Task 9 — ConfigLoader
+
+- `pr_reviewer/config/schema.py` was already created in task 7. No changes needed.
+- Created `pr_reviewer/config/loader.py`:
+  - `ConfigLoader(github_client)` — fetches `.github/pr-auto-review.yml` via `GitHubAPIClient.get_file_content`.
+  - On any exception (404, network error): returns `Config()` (all defaults, no log).
+  - On `yaml.YAMLError`: logs WARN "invalid Config YAML" and returns defaults.
+  - On non-dict parse result: logs WARN "invalid Config: expected mapping" and returns defaults.
+  - On `ValidationError` (type mismatch, etc.): logs WARN "invalid Config: schema validation failed" and returns defaults.
+  - Happy path: `Config.model_validate(parsed)` returns the validated, frozen Config.
+- **Fix encountered:** `":::not valid yaml:::"` is actually valid YAML (parses to a dict with an odd key). Changed invalid YAML test to use `"tool_budget: not_an_int\n"` which triggers a Pydantic `ValidationError`.
+
+**Tests:** 9 unit tests — all green (0.05s). Lint clean.
+
+**Files created:** `pr_reviewer/config/loader.py`, `tests/unit/test_config_loader.py`.
+
+---
+
+**Running totals:** 72 unit tests · 6 integration tests · 0 failures · lint clean

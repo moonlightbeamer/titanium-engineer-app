@@ -106,17 +106,17 @@ Implement an LLM-backed GitHub PR review service in phases: v1 delivers the comp
   - [x] 8.9 Implement `pr_reviewer/components/secret_scrubber.py` — `SecretScrubber` with `scrub(content: str, source: str = "diff", corpus: str | None = None, entry_id: str | None = None) -> tuple[str, list[Detection]]`; uses `detect_secrets.SecretsCollection`; constructs new string, never mutates input
   _Requirements: 3.6, 3.11, 9.7, 11.7_
 
-- [ ] 9. ConfigLoader
-  - [ ] 9.1 Test: `test_valid_yaml_parsed_into_config` — YAML with all fields set → `Config` with correct values
-  - [ ] 9.2 Test: `test_missing_config_file_returns_defaults` — mock 404 → `Config` with all defaults
-  - [ ] 9.3 Test: `test_invalid_yaml_returns_defaults_and_logs_warn` — malformed YAML → defaults; WARN log contains "invalid Config"
-  - [ ] 9.4 Test: `test_config_is_frozen_instance` — `config.tool_budget = 99` raises `ValidationError` or `FrozenInstanceError` (Property 6)
-  - [ ] 9.5 Test: `test_max_linter_files_defaults_to_5` — not in YAML → `config.max_linter_files == 5`
-  - [ ] 9.6 Test: `test_mcp_servers_custom_nvd_endpoint_parsed` — `mcp_servers: {nvd: "http://proxy:9200"}` → `config.mcp_servers.nvd == "http://proxy:9200"`
-  - [ ] 9.7 Test: `test_mcp_servers_defaults_to_standard_endpoints_when_absent` — no `mcp_servers` block → `config.mcp_servers.nvd == "https://services.nvd.nist.gov"`
-  - [ ] 9.8 Test: `test_language_corpus_weights_parsed` — `language_corpus_weights: {python: 1.5}` → `config.knowledge_base.language_corpus_weights == {"python": 1.5}`
-  - [ ] 9.9 Test: `test_language_corpus_weights_defaults_to_empty_dict` — no key → `{}` (all languages weight 1.0)
-  - [ ] 9.10 Implement `pr_reviewer/config/loader.py` and `pr_reviewer/config/schema.py` — `ConfigLoader.load(repo_id, installation_id) -> Config`; `Config` Pydantic frozen model with `MCPServersConfig` and `KnowledgeBaseConfig` nested models; all fields with correct defaults
+- [x] 9. ConfigLoader
+  - [x] 9.1 Test: `test_valid_yaml_parsed_into_config` — YAML with all fields set → `Config` with correct values
+  - [x] 9.2 Test: `test_missing_config_file_returns_defaults` — mock 404 → `Config` with all defaults
+  - [x] 9.3 Test: `test_invalid_yaml_returns_defaults_and_logs_warn` — malformed YAML → defaults; WARN log contains "invalid Config"
+  - [x] 9.4 Test: `test_config_is_frozen_instance` — `config.tool_budget = 99` raises `ValidationError` or `FrozenInstanceError` (Property 6)
+  - [x] 9.5 Test: `test_max_linter_files_defaults_to_5` — not in YAML → `config.max_linter_files == 5`
+  - [x] 9.6 Test: `test_mcp_servers_custom_nvd_endpoint_parsed` — `mcp_servers: {nvd: "http://proxy:9200"}` → `config.mcp_servers.nvd == "http://proxy:9200"`
+  - [x] 9.7 Test: `test_mcp_servers_defaults_to_standard_endpoints_when_absent` — no `mcp_servers` block → `config.mcp_servers.nvd == "https://services.nvd.nist.gov"`
+  - [x] 9.8 Test: `test_language_corpus_weights_parsed` — `language_corpus_weights: {python: 1.5}` → `config.knowledge_base.language_corpus_weights == {"python": 1.5}`
+  - [x] 9.9 Test: `test_language_corpus_weights_defaults_to_empty_dict` — no key → `{}` (all languages weight 1.0)
+  - [x] 9.10 Implement `pr_reviewer/config/loader.py` and `pr_reviewer/config/schema.py` — `ConfigLoader.load(repo_id, installation_id) -> Config`; `Config` Pydantic frozen model with `MCPServersConfig` and `KnowledgeBaseConfig` nested models; all fields with correct defaults
   _Requirements: 7.1, 7.2, 7.3, 7.4, 7.5, 7.6, 11.9, 11.10, 16.5_
 
 - [ ] 10. KnowledgeBase

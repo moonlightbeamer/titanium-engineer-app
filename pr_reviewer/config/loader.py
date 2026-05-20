@@ -34,7 +34,8 @@ class ConfigLoader:
             return Config()
 
         if not isinstance(parsed, dict):
-            _logger.warning("invalid Config: expected mapping, got %s; using defaults", type(parsed).__name__)
+            kind = type(parsed).__name__
+            _logger.warning(f"invalid Config: expected mapping, got {kind}; using defaults")
             return Config()
 
         try:

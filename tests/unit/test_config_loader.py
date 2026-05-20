@@ -1,7 +1,7 @@
 """Unit tests for ConfigLoader (tasks 9.1–9.9)."""
 
 import logging
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
