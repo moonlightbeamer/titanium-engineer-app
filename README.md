@@ -196,17 +196,59 @@ curl http://localhost:8000/health
 
 ### Running the evaluation harness
 
-The evaluation harness measures finding quality (precision, recall, false positive rate) against a labelled test corpus. Run it before any prompt change or model update:
+The evaluation harness is a standalone tool in `eval/` that measures finding quality against a labelled test corpus. It has no runtime dependency on the live service — it reads stored `Finding` records directly from PostgreSQL.
+
+**Prerequisites**
 
 ```bash
-# Full corpus run — must pass zero-FP gate on security before shipping
-inspect eval eval/tasks/
+# Install Inspect AI (the eval runner)
+pip install inspect-ai
 
-# Browse per-sample traces and judge rationales
+# The app must have processed at least some PRs so findings are in the database,
+# OR you seed the corpus manually (see eval/README.md once implemented)
+```
+
+**When to run it**
+
+| Trigger | Command | Gate |
+|---|---|---|
+| Before any prompt change or model update | Full corpus run | Must pass zero security false-positives or the change does not ship |
+| Weekly | Sample run on 10 live reviews | Human vibe-check (1–5) logged alongside judge scores |
+
+**Full corpus run** — use before shipping any change:
+
+```bash
+inspect eval eval/tasks/
+```
+
+**Weekly sample run** — 10 live reviews, lighter and faster:
+
+```bash
+inspect eval eval/tasks/ --limit 10
+```
+
+**Browse results** — per-sample traces, judge rationales, and aggregate metrics:
+
+```bash
 inspect view
 ```
 
-The harness reports: precision/recall/FP per category, per-dimension finding scores, cost and latency per review, Tool_Budget consumption, and delta vs the previous run.
+**What the report includes**
+
+- Precision, recall, and false positive count per category (bugs, security, style, performance)
+- Per-finding scores as a vector: relevance · accuracy · actionability · clarity
+- Average cost and latency per review
+- Tool_Budget consumption distribution
+- Delta vs the previous run
+- Knowledge base retrieval quality (flags security findings with no KB retrieval)
+
+**Meta-prompting loop** — when quality is low, run the improvement loop to get a revised system prompt:
+
+```bash
+inspect eval eval/tasks/ --task meta-prompt-loop
+```
+
+This identifies the 5 lowest-scoring reviews, submits them to a reflector LLM, produces a revised prompt, re-runs, and reports the score delta before you decide whether to deploy the change.
 
 ### Knowledge base management
 
