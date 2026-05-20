@@ -170,6 +170,28 @@ class GitHubAPIClient:
         )
         return [item["name"] for item in response.json()]
 
+    def get_pr_metadata(self, repo: str, pr_number: int) -> dict:
+        token = self.get_access_token()
+        response = self._request(
+            "GET",
+            f"/repos/{repo}/pulls/{pr_number}",
+            headers={"Authorization": f"token {token}"},
+        )
+        return response.json()  # type: ignore[return-value]
+
+    def search_file(self, repo: str, path: str, query: str) -> list[dict]:
+        token = self.get_access_token()
+        q = f"{query} repo:{repo}"
+        if path:
+            q += f" path:{path}"
+        response = self._request(
+            "GET",
+            "/search/code",
+            headers={"Authorization": f"token {token}"},
+            params={"q": q},
+        )
+        return response.json().get("items", [])  # type: ignore[return-value]
+
     def get_symbol_usages(self, repo: str, symbol: str) -> list[dict]:
         token = self.get_access_token()
         response = self._request(

@@ -47,7 +47,7 @@ def create_tools(
 
     def fetch_pr_metadata(**kwargs: Any) -> Any:
         budget.track("fetch_pr_metadata")
-        return ctx.github_client.get_pr_metadata(**kwargs)
+        return ctx.github_client.get_pr_metadata(repo=ctx.repo, pr_number=ctx.pr_number)
 
     def read_findings_so_far(**kwargs: Any) -> list[Finding]:
         budget.track("read_findings_so_far")
@@ -71,21 +71,21 @@ def create_tools(
 
     def fetch_file_content(path: str, ref: str = "HEAD", **kwargs: Any) -> str:
         budget.track("fetch_file_content", path="general")
-        raw = ctx.github_client.get_file_content(path=path, ref=ref, **kwargs)
+        raw = ctx.github_client.get_file_content(repo=ctx.repo, path=path, ref=ref)
         scrubbed, _ = ctx.secret_scrubber.scrub(raw, source="diff")
         return scrubbed
 
     def search_file(path: str = "", query: str = "", **kwargs: Any) -> Any:
         budget.track("search_file")
-        return ctx.github_client.search_file(path=path, query=query, **kwargs)
+        return ctx.github_client.search_file(repo=ctx.repo, path=path, query=query)
 
     def list_directory(path: str = "", **kwargs: Any) -> Any:
         budget.track("list_directory")
-        return ctx.github_client.list_directory(path=path, **kwargs)
+        return ctx.github_client.list_directory(repo=ctx.repo, path=path, ref="HEAD")
 
     def get_symbol_usages(symbol: str = "", **kwargs: Any) -> Any:
         budget.track("get_symbol_usages")
-        return ctx.github_client.get_symbol_usages(symbol=symbol, **kwargs)
+        return ctx.github_client.get_symbol_usages(repo=ctx.repo, symbol=symbol)
 
     def lookup_cve(cve_id: str = "", **kwargs: Any) -> Any:
         if config is not None and not config.knowledge_base.live_cve_lookup:
