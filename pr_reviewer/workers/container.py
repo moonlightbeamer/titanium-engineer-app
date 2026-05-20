@@ -5,7 +5,6 @@ from __future__ import annotations
 import os
 import urllib.parse
 
-import chromadb
 from redis import Redis
 
 from pr_reviewer.agents.llm import make_llm
@@ -40,6 +39,10 @@ class WorkerContainer:
         self._feedback_store = FeedbackStore(self._engine)
         self._diff_parser = DiffParser()
         self._secret_scrubber = SecretScrubber()
+
+        # Import deferred to post-fork: chromadb loads hnswlib (native C++) at
+        # import time, which is not fork-safe on macOS.
+        import chromadb  # noqa: PLC0415
 
         chroma_url = os.getenv("CHROMADB_URL", "http://localhost:8001")
         parsed = urllib.parse.urlparse(chroma_url)
