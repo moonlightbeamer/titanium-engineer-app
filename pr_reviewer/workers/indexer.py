@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Any
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 from celery.schedules import crontab
@@ -13,9 +14,14 @@ from pr_reviewer.logging import get_logger
 from pr_reviewer.models.codebase_index import CodebaseIndex, IndexScope
 from pr_reviewer.workers.celery_app import celery_app
 
+if TYPE_CHECKING:
+    from pr_reviewer.config.schema import Config
+
 _logger = get_logger(__name__)
 
 _MANIFEST_FILES = frozenset({"package.json", "pyproject.toml", "go.mod", "Cargo.toml"})
+_LAST_REFRESH_KEY_PREFIX = "index_last_refresh:"
+_WEEKLY_REFRESH_DAYS = 7
 _SAMPLE_FILE_COUNT = 20
 _MIN_SIGNALS_FOR_DENSITY = 10
 _DEFAULT_MAX_TOKENS = 8_000
@@ -146,11 +152,13 @@ class Indexer:
         db_engine: Any,
         index_store: Any,
         max_tokens: int = _DEFAULT_MAX_TOKENS,
+        config: "Config | None" = None,
     ) -> None:
         self._github_client = github_client
         self._db_engine = db_engine
         self._index_store = index_store
         self._max_tokens = max_tokens
+        self._config = config
 
     def refresh(self, repo_id: str, installation_id: int) -> None:
         if not self._has_successful_job(repo_id):
@@ -160,11 +168,23 @@ class Indexer:
         # May raise — do NOT catch here to preserve previous valid index
         head_sha = self._github_client.get_branch_head_sha(repo_id)
 
-        packages = _detect_monorepo(self._github_client, repo_id)
+        index_scope = self._config.index_scope if self._config else "auto"
+
+        if index_scope == "single":
+            packages: list[str] = []
+        elif index_scope == "monorepo":
+            packages = _detect_monorepo(self._github_client, repo_id)
+            if not packages:
+                packages = ["."]
+        else:
+            packages = _detect_monorepo(self._github_client, repo_id)
+
         if packages:
             scope = IndexScope.monorepo
             for pkg in packages:
-                idx = self._build_index(repo_id, head_sha, scope, package_path=pkg)
+                idx = self._build_index(
+                    repo_id, head_sha, scope, package_path=pkg if pkg != "." else None
+                )
                 self._index_store.save(idx)
                 _prune_old_versions(self._index_store, repo_id)
         else:
@@ -224,6 +244,68 @@ class Indexer:
         )
 
 
+# ── Schedule helpers ──────────────────────────────────────────────────────────
+
+
+def _get_last_refresh_days(redis_client: Any, repo_id: str) -> int | None:
+    """Return age in days of last index refresh, or None if never refreshed."""
+    key = f"{_LAST_REFRESH_KEY_PREFIX}{repo_id}"
+    try:
+        value = redis_client.get(key)
+        if value is None:
+            return None
+        raw = value.decode() if isinstance(value, bytes) else value
+        last_ts = datetime.fromisoformat(raw)
+        return (datetime.now(tz=UTC) - last_ts).days
+    except Exception:
+        return None
+
+
+def _store_last_refresh(redis_client: Any, repo_id: str) -> None:
+    key = f"{_LAST_REFRESH_KEY_PREFIX}{repo_id}"
+    redis_client.set(key, datetime.now(tz=UTC).isoformat())
+
+
+def _run_index_refresh(
+    repo_id: str,
+    installation_id: int,
+    config: "Config | None" = None,
+    redis_client: Any = None,
+) -> None:
+    """Core index refresh logic — extracted for testability."""
+    import os
+
+    if redis_client is None:
+        import redis as _redis
+        redis_client = _redis.from_url(os.getenv("REDIS_URL", "redis://localhost:6379/0"))
+
+    if config is None:
+        from pr_reviewer.config.loader import ConfigLoader
+        from pr_reviewer.store.github_client import GitHubAPIClient
+
+        gh = GitHubAPIClient(installation_id=installation_id)
+        config = ConfigLoader(gh).load(repo_id, installation_id)
+
+    schedule = config.index_refresh_schedule
+
+    if schedule == "on_merge":
+        _logger.info(
+            f"{repo_id}: index_refresh_schedule=on_merge; skipping Beat-triggered run"
+        )
+        return
+
+    if schedule == "weekly":
+        age_days = _get_last_refresh_days(redis_client, repo_id)
+        if age_days is not None and age_days < _WEEKLY_REFRESH_DAYS:
+            _logger.info(
+                f"{repo_id}: weekly refresh; last refresh was {age_days} days ago; skipping"
+            )
+            return
+
+    _logger.info(f"Index refresh proceeding for {repo_id}")
+    _store_last_refresh(redis_client, repo_id)
+
+
 # ── Celery task ───────────────────────────────────────────────────────────────
 
 
@@ -233,7 +315,7 @@ class Indexer:
     max_retries=3,
 )
 def run_index_refresh_task(repo_id: str = "", installation_id: int = 0) -> None:
-    _logger.info(f"Index refresh triggered for {repo_id}")
+    _run_index_refresh(repo_id, installation_id)
 
 
 # Module-level alias used by webhook and job_processor

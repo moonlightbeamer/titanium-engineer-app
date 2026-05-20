@@ -11,6 +11,7 @@ from pr_reviewer.models.finding import Finding
 
 if TYPE_CHECKING:
     from pr_reviewer.agents.review_agent import ReviewContext
+    from pr_reviewer.config.schema import Config
 
 ALL_TOOL_NAMES: list[str] = [
     "fetch_pr_metadata",
@@ -37,9 +38,10 @@ class Tool:
 
 
 def create_tools(
-    ctx: ReviewContext,
+    ctx: "ReviewContext",
     budget: ToolBudgetMiddleware,
     findings_store: list[Finding],
+    config: "Config | None" = None,
 ) -> list[Tool]:
     """Build the full v1 tool list wired to ctx services and the shared budget."""
 
@@ -86,10 +88,14 @@ def create_tools(
         return ctx.github_client.get_symbol_usages(symbol=symbol, **kwargs)
 
     def lookup_cve(cve_id: str = "", **kwargs: Any) -> Any:
+        if config is not None and not config.knowledge_base.live_cve_lookup:
+            return []
         budget.track("lookup_cve")
         return ctx.mcp_client.lookup_cve(cve_id=cve_id)
 
     def check_package_advisory(package: str = "", **kwargs: Any) -> Any:
+        if config is not None and not config.knowledge_base.live_package_advisory:
+            return []
         budget.track("check_package_advisory")
         return ctx.mcp_client.check_package_advisory(package=package)
 

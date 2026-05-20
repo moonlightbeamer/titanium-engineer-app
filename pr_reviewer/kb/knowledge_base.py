@@ -35,6 +35,9 @@ COLLECTIONS = [
 _CORPUS_CONFIG_ATTR: dict[str, str] = {
     "cve_snapshot": "cve_snapshot",
     "language_best_practices": "language_best_practices",
+    "org_guidelines": "coding_guidelines",
+    "fix_knowledge_base": "fix_knowledge_base",
+    "lessons_learned": "lessons_learned",
 }
 
 

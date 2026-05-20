@@ -50,7 +50,7 @@ class ReviewAgent:
     ) -> list[Finding]:
         budget = ToolBudgetMiddleware(config.tool_budget)
         findings_store: list[Finding] = []
-        tools = create_tools(ctx, budget, findings_store)
+        tools = create_tools(ctx, budget, findings_store, config=config)
         tool_map = {t.name: t for t in tools}
 
         # Step 1: fetch PR metadata — always first

@@ -582,3 +582,29 @@ Chronological record of implementation steps. Appended after each task completes
 ---
 
 **Running totals:** 251 unit tests · 6 integration tests (require live Postgres) · 3 pre-existing OTel isolation failures · lint clean · all 28 tasks complete
+
+---
+
+### Task 29 — Config completeness: KB corpus toggles and indexer scope/schedule
+
+Requirements audit (tasks 18–28 done) identified two gaps in the config schema:
+- `KnowledgeBaseConfig` was missing 5 per-corpus toggle fields required by Req 11.9
+- `Config` was missing `index_scope` and `index_refresh_schedule` required by Req 14.5
+
+This task completes the fix by wiring the already-added schema fields into the runtime code.
+
+- Extended `pr_reviewer/kb/knowledge_base.py` — `_CORPUS_CONFIG_ATTR` now maps all five toggleable corpora: `org_guidelines → coding_guidelines`, `fix_knowledge_base → fix_knowledge_base`, `lessons_learned → lessons_learned` (in addition to existing `cve_snapshot` and `language_best_practices`). `_corpus_enabled` now correctly gates all five configurable corpora.
+- Extended `pr_reviewer/agents/tools.py` — `create_tools` gains an optional `config: Config | None = None` parameter (backward-compatible; all existing callers unaffected). `lookup_cve` returns `[]` early when `config.knowledge_base.live_cve_lookup=False`; `check_package_advisory` returns `[]` early when `config.knowledge_base.live_package_advisory=False`. Updated `ReviewAgent.run` to pass `config=config` to `create_tools`.
+- Extended `pr_reviewer/workers/indexer.py`:
+  - `Indexer.__init__` gains optional `config: Config | None` parameter.
+  - `Indexer.refresh` respects `config.index_scope`: `"single"` bypasses `_detect_monorepo` entirely; `"monorepo"` forces the monorepo code path (uses root `.` as package when no packages detected); `"auto"` (default) preserves existing auto-detection behaviour.
+  - Added `_get_last_refresh_days`, `_store_last_refresh`, and `_run_index_refresh` helpers for testable schedule checking.
+  - `run_index_refresh_task` delegates to `_run_index_refresh`. `"on_merge"` schedule returns early immediately; `"weekly"` checks Redis `index_last_refresh:{repo_id}` and skips if refreshed within 7 days, otherwise proceeds and stores new timestamp.
+
+**Tests:** 10 new unit tests in `tests/unit/test_config_completeness.py` — all green.
+
+**Files created:** `tests/unit/test_config_completeness.py`. **Modified:** `pr_reviewer/kb/knowledge_base.py`, `pr_reviewer/agents/tools.py`, `pr_reviewer/agents/review_agent.py`, `pr_reviewer/workers/indexer.py`, `pr_reviewer/config/schema.py` (schema already updated), `.kiro/specs/github-pr-auto-review/tasks.md` (task 29 added and marked complete).
+
+---
+
+**Running totals:** 261 unit tests · 6 integration tests (require live Postgres) · 3 pre-existing OTel isolation failures · lint clean · all 29 tasks complete

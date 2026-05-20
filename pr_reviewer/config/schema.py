@@ -16,6 +16,11 @@ class KnowledgeBaseConfig(BaseModel):
 
     cve_snapshot: bool = True
     language_best_practices: bool = True
+    coding_guidelines: bool = True
+    fix_knowledge_base: bool = True
+    lessons_learned: bool = True
+    live_cve_lookup: bool = True
+    live_package_advisory: bool = True
     language_corpus_weights: dict[str, float] = Field(default_factory=dict)
 
 
@@ -33,4 +38,6 @@ class Config(BaseModel):
     knowledge_base: KnowledgeBaseConfig = Field(default_factory=KnowledgeBaseConfig)
     codebase_index_enabled: bool = False
     index_max_tokens: int = 8000
+    index_scope: str = "auto"             # auto | monorepo | single
+    index_refresh_schedule: str = "daily" # daily | weekly | on_merge
     cross_repo_sharing: bool = False

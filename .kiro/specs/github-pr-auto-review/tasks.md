@@ -390,6 +390,23 @@ Implement an LLM-backed GitHub PR review service in phases: v1 delivers the comp
   - [x] 28.14 Add Alembic migration: `eval_corpus_health` table
   _Requirements: 13.5, 17.1, 17.2, 17.3, 17.4_
 
+- [x] 29. Config completeness — KB corpus toggles and indexer scope/schedule
+  - [x] 29.1 Test: `test_corpus_toggle_coding_guidelines_disables_org_guidelines` — `KnowledgeBaseConfig(coding_guidelines=False)` → `_corpus_enabled("org_guidelines")` returns `False`
+  - [x] 29.2 Test: `test_corpus_toggle_fix_knowledge_base_disables_collection` — `KnowledgeBaseConfig(fix_knowledge_base=False)` → `_corpus_enabled("fix_knowledge_base")` returns `False`
+  - [x] 29.3 Test: `test_corpus_toggle_lessons_learned_disables_collection` — `KnowledgeBaseConfig(lessons_learned=False)` → `_corpus_enabled("lessons_learned")` returns `False`
+  - [x] 29.4 Test: `test_lookup_cve_skipped_when_live_cve_lookup_false` — `config.knowledge_base.live_cve_lookup=False` → `lookup_cve(...)` returns `[]`; `mcp_client.lookup_cve` not called
+  - [x] 29.5 Test: `test_check_package_advisory_skipped_when_live_package_advisory_false` — `config.knowledge_base.live_package_advisory=False` → `check_package_advisory(...)` returns `[]`; `mcp_client.check_package_advisory` not called
+  - [x] 29.6 Test: `test_index_scope_single_skips_monorepo_detection` — `config.index_scope="single"` → `_detect_monorepo` never called; `IndexScope.single` used directly
+  - [x] 29.7 Test: `test_index_scope_monorepo_forces_monorepo_path` — `config.index_scope="monorepo"` → monorepo code path taken even when `_detect_monorepo` returns empty list
+  - [x] 29.8 Test: `test_index_refresh_schedule_on_merge_skips_beat_triggered_run` — `config.index_refresh_schedule="on_merge"` → `run_index_refresh_task` body returns early without calling `Indexer.refresh`
+  - [x] 29.9 Test: `test_index_refresh_schedule_weekly_skips_if_refreshed_within_7_days` — last refresh 5 days ago, `index_refresh_schedule="weekly"` → task returns early
+  - [x] 29.10 Test: `test_index_refresh_schedule_weekly_runs_if_refreshed_8_days_ago` — last refresh 8 days ago, `index_refresh_schedule="weekly"` → task proceeds to `Indexer.refresh`
+  - [x] 29.11 Wire `_CORPUS_CONFIG_ATTR` in `pr_reviewer/kb/knowledge_base.py` — add `org_guidelines → coding_guidelines`, `fix_knowledge_base → fix_knowledge_base`, `lessons_learned → lessons_learned`
+  - [x] 29.12 Wire config gates in `pr_reviewer/agents/tools.py` — `lookup_cve` returns `[]` when `live_cve_lookup=False`; `check_package_advisory` returns `[]` when `live_package_advisory=False`
+  - [x] 29.13 Wire `index_scope` in `pr_reviewer/workers/indexer.py` `Indexer.refresh` — `"single"` bypasses `_detect_monorepo`; `"monorepo"` forces the monorepo path
+  - [x] 29.14 Wire `index_refresh_schedule` in `run_index_refresh_task` — `"on_merge"` returns early; `"weekly"` checks last-refresh timestamp in Redis before proceeding
+  _Requirements: 11.9, 12.4, 14.5_
+
 ## Notes
 
 - Tasks marked **[v2]** depend on all v1 tasks completing first; v2 may be deferred until the Feedback_Store has accumulated meaningful signal (3–6 months of reviews)
