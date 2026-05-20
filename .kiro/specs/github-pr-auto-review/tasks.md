@@ -119,19 +119,19 @@ Implement an LLM-backed GitHub PR review service in phases: v1 delivers the comp
   - [x] 9.10 Implement `pr_reviewer/config/loader.py` and `pr_reviewer/config/schema.py` — `ConfigLoader.load(repo_id, installation_id) -> Config`; `Config` Pydantic frozen model with `MCPServersConfig` and `KnowledgeBaseConfig` nested models; all fields with correct defaults
   _Requirements: 7.1, 7.2, 7.3, 7.4, 7.5, 7.6, 11.9, 11.10, 16.5_
 
-- [ ] 10. KnowledgeBase
-  - [ ] 10.1 Test: `test_query_returns_at_most_5_entries` — 10 entries in collection → at most 5 returned (Property 8)
-  - [ ] 10.2 Test: `test_query_filtered_by_category_tag` — security and style entries → `category="security"` returns only security-tagged
-  - [ ] 10.3 Test: `test_disabled_corpus_not_queried` — `config.knowledge_base.cve_snapshot=False` → ChromaDB never queried for that collection
-  - [ ] 10.4 Test: `test_cve_staleness_warn_after_14_days` — `last_refresh` 15 days ago → WARN log contains "CVE snapshot stale"
-  - [ ] 10.5 Test: `test_model_version_mismatch_returns_empty_and_refuses` — entries with two `model_version` values → `query` returns `[]` with WARN
-  - [ ] 10.6 Test: `test_below_minimum_corpus_returns_empty_with_warn` — fewer than 5 CVE entries → `[]` + WARN "insufficient corpus"
-  - [ ] 10.7 Test: `test_per_language_weight_boosts_language_best_practices_score` — `language_corpus_weights={"python": 2.0}`; two entries with same raw cosine similarity (one Python, one Go) → Python entry ranked higher
-  - [ ] 10.8 Test: `test_weight_applied_only_to_language_best_practices_corpus` — weight set for Python → only `language_best_practices` scores multiplied; `cve_snapshot` scores unchanged
-  - [ ] 10.9 Test: `test_retrieval_latency_metric_emitted` — query call → `kb.retrieval_latency_ms` histogram records a value
-  - [ ] 10.10 Test: `test_cross_repo_fixes_collection_queryable_when_enabled` — entry inserted into `cross_repo_fixes`; `query(...)` returns it in results (Property 8; Req 16.2)
-  - [ ] 10.11 Test: `test_cross_repo_fixes_excluded_when_not_in_active_collections` — collection empty → not included in merged results; no error
-  - [ ] 10.12 Implement `pr_reviewer/kb/knowledge_base.py` — `KnowledgeBase(chromadb_client, config: Config)` with `query(query, category, language, priming=False) -> list[KBEntry]` and `validate_model_versions() -> bool`; six collections pre-created at startup; per-language weighting applied to `language_best_practices` corpus only
+- [x] 10. KnowledgeBase
+  - [x] 10.1 Test: `test_query_returns_at_most_5_entries` — 10 entries in collection → at most 5 returned (Property 8)
+  - [x] 10.2 Test: `test_query_filtered_by_category_tag` — security and style entries → `category="security"` returns only security-tagged
+  - [x] 10.3 Test: `test_disabled_corpus_not_queried` — `config.knowledge_base.cve_snapshot=False` → ChromaDB never queried for that collection
+  - [x] 10.4 Test: `test_cve_staleness_warn_after_14_days` — `last_refresh` 15 days ago → WARN log contains "CVE snapshot stale"
+  - [x] 10.5 Test: `test_model_version_mismatch_returns_empty_and_refuses` — entries with two `model_version` values → `query` returns `[]` with WARN
+  - [x] 10.6 Test: `test_below_minimum_corpus_returns_empty_with_warn` — fewer than 5 CVE entries → `[]` + WARN "insufficient corpus"
+  - [x] 10.7 Test: `test_per_language_weight_boosts_language_best_practices_score` — `language_corpus_weights={"python": 2.0}`; two entries with same raw cosine similarity (one Python, one Go) → Python entry ranked higher
+  - [x] 10.8 Test: `test_weight_applied_only_to_language_best_practices_corpus` — weight set for Python → only `language_best_practices` scores multiplied; `cve_snapshot` scores unchanged
+  - [x] 10.9 Test: `test_retrieval_latency_metric_emitted` — query call → `kb.retrieval_latency_ms` histogram records a value
+  - [x] 10.10 Test: `test_cross_repo_fixes_collection_queryable_when_enabled` — entry inserted into `cross_repo_fixes`; `query(...)` returns it in results (Property 8; Req 16.2)
+  - [x] 10.11 Test: `test_cross_repo_fixes_excluded_when_not_in_active_collections` — collection empty → not included in merged results; no error
+  - [x] 10.12 Implement `pr_reviewer/kb/knowledge_base.py` — `KnowledgeBase(chromadb_client, config: Config)` with `query(query, category, language, priming=False) -> list[KBEntry]` and `validate_model_versions() -> bool`; six collections pre-created at startup; per-language weighting applied to `language_best_practices` corpus only
   _Requirements: 11.1, 11.2, 11.5, 11.7, 11.8, 11.9, 16.5_
 
 - [ ] 11. MCPClient

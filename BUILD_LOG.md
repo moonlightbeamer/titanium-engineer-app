@@ -175,3 +175,28 @@ Chronological record of implementation steps. Appended after each task completes
 ---
 
 **Running totals:** 72 unit tests · 6 integration tests · 0 failures · lint clean
+
+---
+
+### Task 10 — KnowledgeBase
+
+- Created `pr_reviewer/kb/knowledge_base.py`:
+  - `COLLECTIONS` list of 6 corpora: `org_guidelines`, `language_best_practices`, `cve_snapshot`, `fix_knowledge_base`, `lessons_learned`, `cross_repo_fixes`.
+  - `KBEntry` frozen dataclass: `id`, `content`, `corpus`, `language_tag`, `category`, `score`, `model_version`, `source`.
+  - `KnowledgeBase(chroma_client, config, last_refresh_dates)` — creates all 6 collections at startup via `get_or_create_collection`.
+  - `_corpus_enabled(corpus)` — reads `config.knowledge_base.cve_snapshot` / `language_best_practices` booleans; all others always enabled.
+  - `_validate_model_versions()` — scans all enabled collections via `.get()`; if multiple `model_version` values found, logs ERROR "Embedding model version mismatch" and returns False.
+  - `_check_cve_staleness()` — logs WARN "CVE snapshot stale" if `last_refresh["cve_snapshot"]` > 14 days ago.
+  - `_check_cve_minimum()` — logs WARN "Insufficient corpus" and returns False if cve_snapshot has <5 entries.
+  - `_language_weight(corpus, language)` — returns configured weight for `language_best_practices` only; all other corpora return 1.0.
+  - `query(query, category, language, priming=False)` — validates versions, checks staleness/minimum, queries each enabled corpus via ChromaDB (with `where={category}` filter), computes `score = (1 - dist/2) * language_weight`, merges and sorts all entries, returns top 5. Emits `kb.retrieval_latency_ms` histogram on every call.
+- Added `tests/conftest.py` with `os.environ.setdefault("OTEL_SDK_DISABLED", "true")` to suppress OTel thread noise.
+- **Bug fixed in test 10.3:** original test called `chroma.get_or_create_collection()` inside a `for call in chroma.get_or_create_collection.call_args_list:` loop — since `call_args_list` is a live list, each call in the loop appended a new entry, creating an infinite loop that caused the pytest process to hang. Fixed by tracking collection mocks in a separate `collection_mocks` dict during `side_effect`, then asserting `.query.assert_not_called()` directly on the captured mock.
+
+**Tests:** 11 unit tests — all green (1.6s). Lint clean.
+
+**Files created:** `pr_reviewer/kb/knowledge_base.py`, `tests/unit/test_knowledge_base.py`, `tests/conftest.py`.
+
+---
+
+**Running totals:** 83 unit tests · 6 integration tests · 0 failures · lint clean
