@@ -708,3 +708,27 @@ Azure OpenAI resource had both a VNet restriction (403) and a missing deployment
 - `.env.example`: added `AZURE_ANTHROPIC_MODEL` field with default value and comment.
 
 **Files modified:** `pr_reviewer/agents/llm.py`, `pr_reviewer/agents/review_agent.py`, `.env.example`.
+
+---
+
+### Task 31 — Bug fixes: tool→GitHubAPIClient mismatches (surfaced in live run)
+
+These bugs were hidden during earlier runs because the LLM call (Step 3 of `ReviewAgent.run`) was crashing with 403/404 before execution reached Step 5 (`_check_test_coverage`). Once the LLM error was made non-fatal the task continued and hit these bugs.
+
+**Root cause:** all five GitHub-client tool wrappers in `tools.py` were missing `repo=ctx.repo`, and two methods called by those tools were never implemented on `GitHubAPIClient`.
+
+- `pr_reviewer/agents/tools.py`:
+  - `fetch_pr_metadata` — was calling `ctx.github_client.get_pr_metadata(**kwargs)` with no arguments; now calls `get_pr_metadata(repo=ctx.repo, pr_number=ctx.pr_number)`.
+  - `fetch_file_content` — missing `repo=ctx.repo` in `get_file_content` call; fixed.
+  - `search_file` — missing `repo=ctx.repo` in `search_file` call; fixed.
+  - `list_directory` — missing `repo=ctx.repo, ref="HEAD"` in `list_directory` call; fixed.
+  - `get_symbol_usages` — missing `repo=ctx.repo` in `get_symbol_usages` call; fixed.
+- `pr_reviewer/store/github_client.py`:
+  - Added `get_pr_metadata(repo, pr_number)` — GET `/repos/{repo}/pulls/{pr_number}`; returns PR metadata dict.
+  - Added `search_file(repo, path, query)` — GET `/search/code` with `query repo:{repo}` and optional `path:{path}` filter; returns items list.
+
+**Why OpenAI runs didn't surface this:** the 403 VNet and 404 DeploymentNotFound errors from Azure OpenAI crashed the task at Step 3 (LLM call) before Step 5 (`_check_test_coverage` → `list_directory`) was ever reached. The non-fatal LLM error catch added in the Anthropic switch unblocked execution and exposed the downstream bugs.
+
+**Tests:** 272 unit tests passing; no regressions.
+
+**Files modified:** `pr_reviewer/agents/tools.py`, `pr_reviewer/store/github_client.py`, `.kiro/specs/github-pr-auto-review/tasks.md` (task 31 added and marked complete).

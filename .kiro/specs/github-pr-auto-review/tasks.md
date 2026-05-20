@@ -422,6 +422,18 @@ Implement an LLM-backed GitHub PR review service in phases: v1 delivers the comp
   - [x] 30.12 Replace `raise NotImplementedError` stub in `tasks.py` — `process_review_job` calls `get_container().job_store.create_from_payload(payload)` then `container.make_processor(installation_id).process(job)`
   _Requirements: 6.1, 6.2, 6.3_
 
+- [x] 31. Bug fixes surfaced during first live end-to-end run
+  - [x] 31.1 Fix `tools.py` — `fetch_pr_metadata` was calling `ctx.github_client.get_pr_metadata(**kwargs)` with no `repo` or `pr_number`; now passes `repo=ctx.repo, pr_number=ctx.pr_number`
+  - [x] 31.2 Fix `tools.py` — `fetch_file_content` missing `repo=ctx.repo` in `get_file_content` call
+  - [x] 31.3 Fix `tools.py` — `search_file` missing `repo=ctx.repo` in `search_file` call
+  - [x] 31.4 Fix `tools.py` — `list_directory` missing `repo=ctx.repo, ref="HEAD"` in `list_directory` call
+  - [x] 31.5 Fix `tools.py` — `get_symbol_usages` missing `repo=ctx.repo` in `get_symbol_usages` call
+  - [x] 31.6 Add `get_pr_metadata(repo, pr_number)` to `GitHubAPIClient` — GET `/repos/{repo}/pulls/{pr_number}`; was called by tools but not implemented
+  - [x] 31.7 Add `search_file(repo, path, query)` to `GitHubAPIClient` — GET `/search/code` with `query repo:{repo} path:{path}`; was called by tools but not implemented
+  - [x] 31.8 Fix `review_agent.py` — add `except Exception` catch around LLM call (Step 3) so network/auth errors log and continue rather than crashing the task; previously only `TimeoutError` was caught
+  - [x] 31.9 Switch primary LLM to Azure AI Foundry Claude via `litellm` — `make_llm()` now tries `AZURE_ANTHROPIC_API_KEY` + `AZURE_ANTHROPIC_ENDPOINT` first, falls back to Azure OpenAI
+  _Requirements: 6.1, 6.3_
+
 ## Notes
 
 - Tasks marked **[v2]** depend on all v1 tasks completing first; v2 may be deferred until the Feedback_Store has accumulated meaningful signal (3–6 months of reviews)
