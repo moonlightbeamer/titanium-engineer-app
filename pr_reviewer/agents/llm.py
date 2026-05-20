@@ -1,8 +1,8 @@
 """LLM factory — builds the ReviewAgent LLM client from environment variables.
 
 Priority order:
-  1. Azure AI Foundry Claude  (AZURE_ANTHROPIC_API_KEY + AZURE_ANTHROPIC_ENDPOINT)
-  2. Azure OpenAI             (AZURE_OPENAI_API_KEY + AZURE_OPENAI_ENDPOINT)
+  1. Azure OpenAI             (AZURE_OPENAI_API_KEY + AZURE_OPENAI_ENDPOINT)
+  2. Azure AI Foundry Claude  (AZURE_ANTHROPIC_API_KEY + AZURE_ANTHROPIC_ENDPOINT)
   3. NoopLLM stub             (no credentials configured)
 """
 
@@ -68,10 +68,10 @@ class _NoopLLM:
 
 
 def make_llm() -> Any:
-    """Return the configured LLM. Priority: Azure Anthropic → Azure OpenAI → Noop."""
-    if os.getenv("AZURE_ANTHROPIC_API_KEY") and os.getenv("AZURE_ANTHROPIC_ENDPOINT"):
-        return _AzureAnthropicLLM()
+    """Return the configured LLM. Priority: Azure OpenAI → Azure Anthropic → Noop."""
     if os.getenv("AZURE_OPENAI_API_KEY") and os.getenv("AZURE_OPENAI_ENDPOINT"):
         return _AzureOpenAILLM()
+    if os.getenv("AZURE_ANTHROPIC_API_KEY") and os.getenv("AZURE_ANTHROPIC_ENDPOINT"):
+        return _AzureAnthropicLLM()
     _logger.warning("No LLM credentials set; review agent will produce no findings")
     return _NoopLLM()

@@ -7,6 +7,8 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 from uuid import UUID, uuid4
 
+import httpx
+
 from pr_reviewer.agents.tool_budget import BudgetExhaustedError, ToolBudgetMiddleware
 from pr_reviewer.agents.tools import Tool, create_tools
 from pr_reviewer.logging import get_logger
@@ -146,12 +148,15 @@ def _check_test_coverage(
     if list_dir_tool is None:
         return
 
-    for changed_file in diff.changed_files:
-        try:
-            test_files = list_dir_tool.func(path="tests")
-        except BudgetExhaustedError:
-            return
+    try:
+        test_files = list_dir_tool.func(path="tests")
+    except BudgetExhaustedError:
+        return
+    except httpx.HTTPError as exc:
+        _logger.warning("Could not list tests directory; skipping coverage check: %s", exc)
+        return
 
+    for changed_file in diff.changed_files:
         if not test_files:
             findings_store.append(
                 Finding(
