@@ -608,3 +608,59 @@ This task completes the fix by wiring the already-added schema fields into the r
 ---
 
 **Running totals:** 261 unit tests · 6 integration tests (require live Postgres) · 3 pre-existing OTel isolation failures · lint clean · all 29 tasks complete
+
+---
+
+### Bug fixes — first live launch (session following task 29)
+
+During the first local end-to-end launch (`./launch`) several runtime bugs were surfaced and fixed:
+
+**Fix 1 — ChromaDB v2 API health check timeout**
+- `chromadb/chroma:latest` updated its API; `/api/v1/heartbeat` now returns `410 Gone`.
+- Updated `launch` script and `pr_reviewer/api/health.py` (`make_chromadb_probe`) to use `/api/v2/heartbeat`.
+
+**Fix 2 — Webhook always returning 401 (GITHUB_WEBHOOK_SECRET missing)**
+- `pr_reviewer/api/main.py` never called `load_dotenv()`. `os.getenv("GITHUB_WEBHOOK_SECRET")` returned an empty string; every HMAC comparison failed.
+- Added `from dotenv import load_dotenv; load_dotenv()` at the top of `pr_reviewer/api/main.py`.
+
+**Fix 3 — Celery workers not registering tasks (`KeyError` on dispatch)**
+- `celery_app.py` had no `include` list, so Celery loaded only `pr_reviewer/workers/__init__.py` (which only exports `celery_app`). `tasks.py`, `feedback_processor.py`, and `indexer.py` were never imported → every `.apply_async` raised `KeyError: 'pr_reviewer.workers.tasks.process_review_job'`.
+- Added `include=["pr_reviewer.workers.tasks", "pr_reviewer.workers.feedback_processor", "pr_reviewer.workers.indexer"]` to the `Celery(...)` constructor.
+- Added `load_dotenv()` to `celery_app.py` so worker processes read `.env`.
+
+**Fix 4 — cloudflared replaces ngrok (corporate network blocks ngrok.com)**
+- Replaced all ngrok references in `launch` script with cloudflared:
+  - Installs via `brew install cloudflared` if absent.
+  - Starts `cloudflared tunnel --url http://localhost:8000` and polls the log for the `trycloudflare.com` URL.
+- Removed port 4040 (ngrok dashboard) from the port-free loop.
+- Updated `README.md` — Step 3 now describes cloudflared instead of ngrok.
+
+**Files modified:** `pr_reviewer/api/main.py`, `pr_reviewer/workers/celery_app.py`, `pr_reviewer/api/health.py`, `launch`, `README.md`.
+
+---
+
+### Task 30 — Wire `process_review_job` to `JobProcessor`
+
+The Celery task body was a `raise NotImplementedError` stub left from the initial scaffold. This task completes the wiring so the full review pipeline runs on every queued job.
+
+- Created `pr_reviewer/agents/llm.py`:
+  - `_AzureOpenAILLM` — wraps `openai.AzureOpenAI`; converts `_Message` list to OpenAI chat format; reads `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_DEPLOYMENT_NAME`, `AZURE_OPENAI_API_VERSION` from env.
+  - `_NoopLLM` — stub used when Azure credentials are absent; `invoke()` returns `None` and logs a warning.
+  - `make_llm()` — returns `_AzureOpenAILLM` when credentials are present, `_NoopLLM` otherwise.
+- Created `pr_reviewer/store/job_store.py`:
+  - `JobStore(engine)` — `create_from_payload(payload)` maps `installation.id`, `repository.full_name`, `pull_request.number`, `pull_request.head.sha` to a new `Job` row; queries the most recent complete job for the same PR to populate `last_reviewed_sha` (enables incremental diffing).
+  - `update_status(job_id, status)` — used by `JobProcessor` on auth errors.
+  - `update_success(job_id, commit_sha, context_tokens)` — marks the job complete after a successful review.
+- Created `pr_reviewer/workers/container.py`:
+  - `WorkerContainer` — holds all shared, long-lived connections (SQLAlchemy engine, Redis, ChromaDB client, `KnowledgeBase`, `MCPClient`, `ReviewAgent`); initialised once per worker process.
+  - `make_processor(installation_id)` — creates a fresh `GitHubAPIClient`, `ConfigLoader`, and `CommentPoster` per task, then assembles a `JobProcessor`.
+  - `get_container()` — module-level lazy singleton; safe to call from every task invocation.
+- Updated `pr_reviewer/workers/tasks.py` — `process_review_job` now: (1) calls `get_container().job_store.create_from_payload(payload)`, (2) calls `container.make_processor(installation_id).process(job)`. `get_container` imported at module level (testable via `patch("pr_reviewer.workers.tasks.get_container", ...)`).
+
+**Tests:** 11 new unit tests across `test_job_store.py` and `test_tasks_review.py` — all green.
+
+**Files created:** `pr_reviewer/agents/llm.py`, `pr_reviewer/store/job_store.py`, `pr_reviewer/workers/container.py`, `tests/unit/test_job_store.py`, `tests/unit/test_tasks_review.py`. **Modified:** `pr_reviewer/workers/tasks.py`, `.kiro/specs/github-pr-auto-review/tasks.md` (task 30 added and marked complete).
+
+---
+
+**Running totals:** 272 unit tests · 6 integration tests (require live Postgres) · 3 pre-existing OTel isolation failures · lint clean · all 30 tasks complete
