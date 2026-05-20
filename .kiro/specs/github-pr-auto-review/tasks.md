@@ -38,19 +38,19 @@ Implement an LLM-backed GitHub PR review service in phases: v1 delivers the comp
   - [x] 3.9 Implement Alembic setup in `alembic/`; migration 001: `jobs` table; migration 002: `findings` table; migration 003: `feedback_signals` table
   - [x] 3.10 Implement all model classes in `pr_reviewer/models/`: `Job`, `Finding`, `FeedbackSignal` as frozen dataclasses; `JobStatus`, `ReviewCategory`, `Severity`, `Confidence`, `SignalType` enums
 
-- [ ] 4. GitHubAPIClient
-  - [ ] 4.1 Test: `test_jwt_has_correct_claims` — generated JWT contains `iat`, `exp` (60s from now), `iss` = `GITHUB_APP_ID`
-  - [ ] 4.2 Test: `test_token_exchange_sends_jwt_as_bearer` — mocked POST `/app/installations/{id}/access_tokens`; `Authorization: Bearer <jwt>` present
-  - [ ] 4.3 Test: `test_token_cached_in_redis` — second call within expiry window → 0 additional HTTP calls, Redis hit
-  - [ ] 4.4 Test: `test_token_refreshed_4_min_before_expiry` — token expiring in 4 minutes → proactive refresh triggered
-  - [ ] 4.5 Test: `test_401_raises_auth_error_no_retry` — mock returns 401 → `AuthError` raised immediately; no retry (Property 4)
-  - [ ] 4.6 Test: `test_403_rate_limit_retries_with_retry_after_header` — mock returns 403 with `Retry-After: 2` → waits ~2s, retries; after 3 failures raises `RateLimitError`
-  - [ ] 4.7 Test: `test_429_rate_limit_same_behavior_as_403`
-  - [ ] 4.8 Test: `test_compare_commits_calls_correct_endpoint` — `compare_commits(repo, "sha1", "sha2")` → `GET /repos/{repo}/compare/sha1...sha2`
-  - [ ] 4.9 Test: `test_post_review_sends_correct_payload` — mock POST `/pulls/{n}/reviews` → request body matches expected shape
-  - [ ] 4.10 Test: `test_traceparent_header_on_every_outbound_call` — all HTTP calls carry `traceparent` in W3C format `00-{trace_id}-{span_id}-{flags}`
-  - [ ] 4.11 Test: `test_otel_span_created_per_api_call` — each method call produces a child span with `endpoint` and `status_code` attributes
-  - [ ] 4.12 Implement `pr_reviewer/store/github_client.py` — `GitHubAPIClient(installation_id: int, redis_client: Redis)` with methods: `get_access_token`, `get_diff`, `get_file_content`, `list_directory`, `get_symbol_usages`, `post_review`, `get_existing_reviews`, `compare_commits`, `get_branch_head_sha`
+- [x] 4. GitHubAPIClient
+  - [x] 4.1 Test: `test_jwt_has_correct_claims` — generated JWT contains `iat`, `exp` (60s from now), `iss` = `GITHUB_APP_ID`
+  - [x] 4.2 Test: `test_token_exchange_sends_jwt_as_bearer` — mocked POST `/app/installations/{id}/access_tokens`; `Authorization: Bearer <jwt>` present
+  - [x] 4.3 Test: `test_token_cached_in_redis` — second call within expiry window → 0 additional HTTP calls, Redis hit
+  - [x] 4.4 Test: `test_token_refreshed_4_min_before_expiry` — token expiring in 4 minutes → proactive refresh triggered
+  - [x] 4.5 Test: `test_401_raises_auth_error_no_retry` — mock returns 401 → `AuthError` raised immediately; no retry (Property 4)
+  - [x] 4.6 Test: `test_403_rate_limit_retries_with_retry_after_header` — mock returns 403 with `Retry-After: 2` → waits ~2s, retries; after 3 failures raises `RateLimitError`
+  - [x] 4.7 Test: `test_429_rate_limit_same_behavior_as_403`
+  - [x] 4.8 Test: `test_compare_commits_calls_correct_endpoint` — `compare_commits(repo, "sha1", "sha2")` → `GET /repos/{repo}/compare/sha1...sha2`
+  - [x] 4.9 Test: `test_post_review_sends_correct_payload` — mock POST `/pulls/{n}/reviews` → request body matches expected shape
+  - [x] 4.10 Test: `test_traceparent_header_on_every_outbound_call` — all HTTP calls carry `traceparent` in W3C format `00-{trace_id}-{span_id}-{flags}`
+  - [x] 4.11 Test: `test_otel_span_created_per_api_call` — each method call produces a child span with `endpoint` and `status_code` attributes
+  - [x] 4.12 Implement `pr_reviewer/store/github_client.py` — `GitHubAPIClient(installation_id: int, redis_client: Redis)` with methods: `get_access_token`, `get_diff`, `get_file_content`, `list_directory`, `get_symbol_usages`, `post_review`, `get_existing_reviews`, `compare_commits`, `get_branch_head_sha`
   _Requirements: 1.1, 1.5, 1.8, 1.9, 1.10, 1.11_
 
 - [ ] 5. WebhookReceiver
