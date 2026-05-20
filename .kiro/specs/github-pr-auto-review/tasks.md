@@ -6,37 +6,37 @@ Implement an LLM-backed GitHub PR review service in phases: v1 delivers the comp
 
 ## Task List
 
-- [ ] 1. Project scaffold and dependencies
-  - [ ] 1.1 Create `pyproject.toml` with pinned dependencies: `fastapi`, `celery[redis]`, `chromadb`, `langchain`, `langchain-openai`, `openai`, `pydantic>=2`, `detect-secrets`, `slowapi`, `alembic`, `sqlalchemy`, `pytest`, `pytest-asyncio`, `httpx`, `opentelemetry-sdk`, `opentelemetry-exporter-otlp`
-  - [ ] 1.2 Create directory layout: `pr_reviewer/{api,workers,agents,components,config,kb,store,models}/`, `eval/{judges,tasks}/`, `tests/{unit,integration,e2e}/`, `data/{guidelines/}`
-  - [ ] 1.3 Create `docker-compose.yml` with PostgreSQL 16, Redis 7, ChromaDB HTTP server (port 8001), OTel Collector
-  - [ ] 1.4 Create `.env.example` with all required variables: `GITHUB_APP_PRIVATE_KEY`, `GITHUB_APP_ID`, `GITHUB_WEBHOOK_SECRET`, `OPENAI_API_KEY`, `DATABASE_URL`, `REDIS_URL`, `CHROMADB_URL`, `LOG_LEVEL`
-  - [ ] 1.5 Create `Makefile` with `make test`, `make lint`, `make run`, `make migrate`
-  - [ ] 1.6 Create GitHub Actions CI: lint + unit tests on PR; integration tests on push to main
-  - [ ] 1.7 Confirm `pytest` collects 0 tests without error after scaffold
+- [x] 1. Project scaffold and dependencies
+  - [x] 1.1 Create `pyproject.toml` with pinned dependencies: `fastapi`, `celery[redis]`, `chromadb`, `langchain`, `langchain-openai`, `openai`, `pydantic>=2`, `detect-secrets`, `slowapi`, `alembic`, `sqlalchemy`, `pytest`, `pytest-asyncio`, `httpx`, `opentelemetry-sdk`, `opentelemetry-exporter-otlp`
+  - [x] 1.2 Create directory layout: `pr_reviewer/{api,workers,agents,components,config,kb,store,models}/`, `eval/{judges,tasks}/`, `tests/{unit,integration,e2e}/`, `data/{guidelines/}`
+  - [x] 1.3 Create `docker-compose.yml` with PostgreSQL 16, Redis 7, ChromaDB HTTP server (port 8001), OTel Collector
+  - [x] 1.4 Create `.env.example` with all required variables: `GITHUB_APP_PRIVATE_KEY`, `GITHUB_APP_ID`, `GITHUB_WEBHOOK_SECRET`, `OPENAI_API_KEY`, `DATABASE_URL`, `REDIS_URL`, `CHROMADB_URL`, `LOG_LEVEL`
+  - [x] 1.5 Create `Makefile` with `make test`, `make lint`, `make run`, `make migrate`
+  - [x] 1.6 Create GitHub Actions CI: lint + unit tests on PR; integration tests on push to main
+  - [x] 1.7 Confirm `pytest` collects 0 tests without error after scaffold
 
-- [ ] 2. OpenTelemetry instrumentation setup
-  - [ ] 2.1 Test: `test_setup_telemetry_does_not_raise` — `setup_telemetry("pr_reviewer")` on blank environment raises no exception
-  - [ ] 2.2 Test: `test_tracer_provider_available_globally` — after setup, `get_tracer("pr_reviewer")` returns a non-noop tracer
-  - [ ] 2.3 Test: `test_all_golden_signal_metrics_registered` — `MeterProvider` contains instruments named `review.duration_ms`, `review.jobs_started`, `review.errors`, `review.queue_depth`, `review.tool_budget_used`, `kb.retrieval_latency_ms`, `kb.retrieval_relevance`
-  - [ ] 2.4 Test: `test_structured_logger_includes_trace_id` — log record produced inside an active span contains `trace_id` and `span_id`
-  - [ ] 2.5 Test: `test_log_level_read_from_env` — `LOG_LEVEL=WARN` → root logger level is WARNING
-  - [ ] 2.6 Test: `test_rate_limited_logger_deduplicates_within_window` — same error message emitted 5× within 60s → only 1 log record emitted
-  - [ ] 2.7 Test: `test_rate_limited_logger_resets_after_window` — same error after 61s → emitted again
-  - [ ] 2.8 Implement `pr_reviewer/telemetry.py` — `setup_telemetry(service_name: str)` initialises TracerProvider + MeterProvider with OTLP exporters; all golden signal metrics declared as module-level constants
-  - [ ] 2.9 Implement `pr_reviewer/logging.py` — `get_logger(name: str) -> RateLimitedLogger`; JSON formatter; injects `job_id`, `repo_id`, `trace_id`, `span_id` from context vars; deduplicates identical errors within 60s window
+- [x] 2. OpenTelemetry instrumentation setup
+  - [x] 2.1 Test: `test_setup_telemetry_does_not_raise` — `setup_telemetry("pr_reviewer")` on blank environment raises no exception
+  - [x] 2.2 Test: `test_tracer_provider_available_globally` — after setup, `get_tracer("pr_reviewer")` returns a non-noop tracer
+  - [x] 2.3 Test: `test_all_golden_signal_metrics_registered` — `MeterProvider` contains instruments named `review.duration_ms`, `review.jobs_started`, `review.errors`, `review.queue_depth`, `review.tool_budget_used`, `kb.retrieval_latency_ms`, `kb.retrieval_relevance`
+  - [x] 2.4 Test: `test_structured_logger_includes_trace_id` — log record produced inside an active span contains `trace_id` and `span_id`
+  - [x] 2.5 Test: `test_log_level_read_from_env` — `LOG_LEVEL=WARN` → root logger level is WARNING
+  - [x] 2.6 Test: `test_rate_limited_logger_deduplicates_within_window` — same error message emitted 5× within 60s → only 1 log record emitted
+  - [x] 2.7 Test: `test_rate_limited_logger_resets_after_window` — same error after 61s → emitted again
+  - [x] 2.8 Implement `pr_reviewer/telemetry.py` — `setup_telemetry(service_name: str)` initialises TracerProvider + MeterProvider with OTLP exporters; all golden signal metrics declared as module-level constants
+  - [x] 2.9 Implement `pr_reviewer/logging.py` — `get_logger(name: str) -> RateLimitedLogger`; JSON formatter; injects `job_id`, `repo_id`, `trace_id`, `span_id` from context vars; deduplicates identical errors within 60s window
 
-- [ ] 3. Database schema and migrations
-  - [ ] 3.1 Test: `test_v1_migrations_apply_to_blank_db` — `alembic upgrade head` on empty PostgreSQL → exits 0, all v1 tables present
-  - [ ] 3.2 Test: `test_v1_migrations_are_reversible` — `alembic downgrade -1` from each migration → succeeds
-  - [ ] 3.3 Test: `test_jobs_table_columns_match_model` — `jobs` table has all fields from `Job` dataclass with correct types
-  - [ ] 3.4 Test: `test_findings_table_columns_match_model` — matches `Finding` dataclass
-  - [ ] 3.5 Test: `test_feedback_signals_table_columns_match_model` — matches `FeedbackSignal` dataclass
-  - [ ] 3.6 Test: `test_indexes_created` — `EXPLAIN` on `WHERE repo_id = X AND pr_number = Y` uses index; same for `commit_sha`, `findings(job_id)`
-  - [ ] 3.7 Test: `test_job_model_is_frozen` — `Job(...)` instance raises `FrozenInstanceError` on field assignment (Property 6)
-  - [ ] 3.8 Test: `test_finding_model_is_frozen` — same for `Finding` (Property 6)
-  - [ ] 3.9 Implement Alembic setup in `alembic/`; migration 001: `jobs` table; migration 002: `findings` table; migration 003: `feedback_signals` table
-  - [ ] 3.10 Implement all model classes in `pr_reviewer/models/`: `Job`, `Finding`, `FeedbackSignal` as frozen dataclasses; `JobStatus`, `ReviewCategory`, `Severity`, `Confidence`, `SignalType` enums
+- [x] 3. Database schema and migrations
+  - [x] 3.1 Test: `test_v1_migrations_apply_to_blank_db` — `alembic upgrade head` on empty PostgreSQL → exits 0, all v1 tables present
+  - [x] 3.2 Test: `test_v1_migrations_are_reversible` — `alembic downgrade -1` from each migration → succeeds
+  - [x] 3.3 Test: `test_jobs_table_columns_match_model` — `jobs` table has all fields from `Job` dataclass with correct types
+  - [x] 3.4 Test: `test_findings_table_columns_match_model` — matches `Finding` dataclass
+  - [x] 3.5 Test: `test_feedback_signals_table_columns_match_model` — matches `FeedbackSignal` dataclass
+  - [x] 3.6 Test: `test_indexes_created` — `EXPLAIN` on `WHERE repo_id = X AND pr_number = Y` uses index; same for `commit_sha`, `findings(job_id)`
+  - [x] 3.7 Test: `test_job_model_is_frozen` — `Job(...)` instance raises `FrozenInstanceError` on field assignment (Property 6)
+  - [x] 3.8 Test: `test_finding_model_is_frozen` — same for `Finding` (Property 6)
+  - [x] 3.9 Implement Alembic setup in `alembic/`; migration 001: `jobs` table; migration 002: `findings` table; migration 003: `feedback_signals` table
+  - [x] 3.10 Implement all model classes in `pr_reviewer/models/`: `Job`, `Finding`, `FeedbackSignal` as frozen dataclasses; `JobStatus`, `ReviewCategory`, `Severity`, `Confidence`, `SignalType` enums
 
 - [ ] 4. GitHubAPIClient
   - [ ] 4.1 Test: `test_jwt_has_correct_claims` — generated JWT contains `iat`, `exp` (60s from now), `iss` = `GITHUB_APP_ID`
