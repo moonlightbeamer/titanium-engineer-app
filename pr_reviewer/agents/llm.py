@@ -1,4 +1,10 @@
-"""LLM factory — builds the ReviewAgent LLM client from environment variables."""
+"""LLM factory — builds the ReviewAgent LLM client from environment variables.
+
+Priority order:
+  1. Azure AI Foundry Claude  (AZURE_ANTHROPIC_API_KEY + AZURE_ANTHROPIC_ENDPOINT)
+  2. Azure OpenAI             (AZURE_OPENAI_API_KEY + AZURE_OPENAI_ENDPOINT)
+  3. NoopLLM stub             (no credentials configured)
+"""
 
 import os
 from typing import Any
@@ -8,8 +14,31 @@ from pr_reviewer.logging import get_logger
 _logger = get_logger(__name__)
 
 
+class _AzureAnthropicLLM:
+    """Azure AI Foundry Claude adapter via litellm."""
+
+    def __init__(self) -> None:
+        self._api_key = os.environ["AZURE_ANTHROPIC_API_KEY"]
+        endpoint = os.environ["AZURE_ANTHROPIC_ENDPOINT"].rstrip("/")
+        self._api_base = f"{endpoint}/models"
+        model_name = os.getenv("AZURE_ANTHROPIC_MODEL", "claude-3-5-sonnet-20241022")
+        self._model = f"azure_ai/{model_name}"
+        _logger.info(f"LLM: Azure AI Foundry Claude ({model_name})")
+
+    def invoke(self, messages: list) -> Any:
+        import litellm
+
+        chat_messages = [{"role": "user", "content": m.content} for m in messages]
+        return litellm.completion(
+            model=self._model,
+            messages=chat_messages,
+            api_key=self._api_key,
+            api_base=self._api_base,
+        )
+
+
 class _AzureOpenAILLM:
-    """Azure OpenAI adapter that maps _Message list → chat completion."""
+    """Azure OpenAI adapter."""
 
     def __init__(self) -> None:
         import openai
@@ -20,6 +49,7 @@ class _AzureOpenAILLM:
             api_version=os.getenv("AZURE_OPENAI_API_VERSION", "2024-08-01-preview"),
         )
         self._deployment = os.environ["AZURE_OPENAI_DEPLOYMENT_NAME"]
+        _logger.info(f"LLM: Azure OpenAI ({self._deployment})")
 
     def invoke(self, messages: list) -> Any:
         oai_messages = [{"role": "user", "content": m.content} for m in messages]
@@ -30,7 +60,7 @@ class _AzureOpenAILLM:
 
 
 class _NoopLLM:
-    """Stub used when Azure OpenAI credentials are absent."""
+    """Stub used when no LLM credentials are configured."""
 
     def invoke(self, messages: list) -> None:
         _logger.warning("No LLM configured; returning empty response")
@@ -38,8 +68,10 @@ class _NoopLLM:
 
 
 def make_llm() -> Any:
-    """Return the configured LLM. Falls back to a no-op stub if credentials are absent."""
+    """Return the configured LLM. Priority: Azure Anthropic → Azure OpenAI → Noop."""
+    if os.getenv("AZURE_ANTHROPIC_API_KEY") and os.getenv("AZURE_ANTHROPIC_ENDPOINT"):
+        return _AzureAnthropicLLM()
     if os.getenv("AZURE_OPENAI_API_KEY") and os.getenv("AZURE_OPENAI_ENDPOINT"):
         return _AzureOpenAILLM()
-    _logger.warning("Azure OpenAI credentials not set; review agent will return no findings")
+    _logger.warning("No LLM credentials set; review agent will produce no findings")
     return _NoopLLM()

@@ -82,6 +82,8 @@ class ReviewAgent:
                 findings_store.extend(_parse_findings(response, ctx.job_id))
             except TimeoutError:
                 _logger.warning("LLM timed out twice; returning partial findings")
+        except Exception as exc:
+            _logger.error(f"LLM call failed: {exc!s}; returning partial findings")
 
         # Step 4: resolve low-confidence findings with one extra tool call each
         for finding in list(findings_store):
