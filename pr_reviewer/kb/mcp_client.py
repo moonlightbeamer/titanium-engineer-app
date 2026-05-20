@@ -19,9 +19,13 @@ _logger = get_logger(__name__)
 NVD_RATE_LIMIT = 10   # requests per minute
 OSV_RATE_LIMIT = 20   # requests per minute
 
+SNYK_RATE_LIMIT = 20
+
 _SERVER_RATE_LIMITS: dict[str, int] = {
     "nvd": NVD_RATE_LIMIT,
     "osv": OSV_RATE_LIMIT,
+    "snyk": SNYK_RATE_LIMIT,
+    "ghsa": 30,
 }
 
 
@@ -31,6 +35,13 @@ class CVEAdvisory:
     description: str
     severity: str
     source: str = "nvd"
+
+
+@dataclass(frozen=True)
+class OWASPMatch:
+    category: str   # e.g. "A03:2021"
+    description: str
+    confidence: str  # "high" | "medium" | "low"
 
 
 @dataclass(frozen=True)
@@ -154,3 +165,101 @@ class MCPClient:
         except httpx.RequestError as exc:
             _logger.warning(f"OSV request error ({exc}) — corpus fallback")
             return self._fallback_to_kb(package)
+
+    # ── v2 methods ────────────────────────────────────────────────────────────
+
+    def ghsa_lookup(
+        self, package: str, version: str, ecosystem: str
+    ) -> list[CVEAdvisory]:
+        """Query GitHub Security Advisories for a package/version."""
+        url = "https://api.github.com/advisories"
+        try:
+            response = httpx.get(
+                url,
+                params={"ecosystem": ecosystem, "package": package, "version": version},
+                headers=self._headers(),
+                timeout=10.0,
+            )
+            response.raise_for_status()
+            items = response.json() if isinstance(response.json(), list) else []
+            return [
+                CVEAdvisory(
+                    id=item.get("ghsa_id", "unknown"),
+                    description=item.get("summary", ""),
+                    severity=item.get("severity", "unknown"),
+                    source="ghsa",
+                )
+                for item in items
+            ]
+        except (httpx.HTTPStatusError, httpx.RequestError) as exc:
+            _logger.warning(f"GHSA lookup failed for {package}: {exc}")
+            return []
+
+    def snyk_lookup(
+        self, package: str, version: str, ecosystem: str
+    ) -> list[CVEAdvisory]:
+        """Query Snyk for package vulnerabilities; falls back to cve_snapshot corpus."""
+        if not self._check_rate_limit("snyk"):
+            _logger.warning(f"Snyk rate limit exhausted — falling back to corpus for {package}")
+            entries = self._kb.query(package, category="security", language="")
+            return [
+                CVEAdvisory(
+                    id=getattr(e, "id", package),
+                    description=getattr(e, "content", ""),
+                    severity="unknown",
+                    source="fallback_corpus",
+                )
+                for e in entries
+            ]
+
+        snyk_url = "https://api.snyk.io/rest/orgs/public/packages"
+        try:
+            response = httpx.get(
+                f"{snyk_url}/{ecosystem}/{package}/{version}/issues",
+                headers=self._headers(),
+                timeout=10.0,
+            )
+            response.raise_for_status()
+            vulns = response.json().get("data", [])
+            return [
+                CVEAdvisory(
+                    id=v.get("id", "unknown"),
+                    description=v.get("attributes", {}).get("title", ""),
+                    severity=v.get("attributes", {}).get("severity", "unknown"),
+                    source="snyk",
+                )
+                for v in vulns
+            ]
+        except (httpx.HTTPStatusError, httpx.RequestError) as exc:
+            _logger.warning(f"Snyk lookup failed for {package}: {exc}")
+            return []
+
+    def owasp_check(self, code_snippet: str, language: str) -> list[OWASPMatch]:  # noqa: ARG002
+        """Pattern-match code snippet against OWASP Top 10 vulnerability patterns."""
+        matches: list[OWASPMatch] = []
+
+        # A03:2021 — Injection: SQL string concatenation
+        import re as _re
+        sql_keywords = r"(?:SELECT|INSERT|UPDATE|DELETE|DROP|ALTER|CREATE)\s"
+        concat_patterns = [
+            _re.compile(r'["\'].*' + sql_keywords + r'.*["\'].*\+', _re.IGNORECASE),
+            _re.compile(r'\+.*["\'].*' + sql_keywords, _re.IGNORECASE),
+            _re.compile(r'f["\'].*\{.*\}.*' + sql_keywords, _re.IGNORECASE),
+        ]
+        safe_patterns = [
+            _re.compile(r'execute\s*\(.*%s', _re.IGNORECASE),
+            _re.compile(r'execute\s*\(.*\?', _re.IGNORECASE),
+            _re.compile(r'execute\s*\(.*:\w+', _re.IGNORECASE),
+        ]
+
+        is_safe = any(p.search(code_snippet) for p in safe_patterns)
+        if not is_safe:
+            is_injection = any(p.search(code_snippet) for p in concat_patterns)
+            if is_injection:
+                matches.append(OWASPMatch(
+                    category="A03:2021",
+                    description="Potential SQL injection via string concatenation",
+                    confidence="high",
+                ))
+
+        return matches

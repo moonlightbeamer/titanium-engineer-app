@@ -298,96 +298,96 @@ Implement an LLM-backed GitHub PR review service in phases: v1 delivers the comp
   _Requirements: 11.1, 11.5, 11.6, 11.7, 11.8, 11.9, 16.3, 16.4_
 
 - [x] 22. CodebaseIndex data model and migration **[v2]**
-  - [ ] 22.1 Test: `test_codebase_indexes_migration_applies_and_rolls_back` — round-trip `alembic upgrade head` then `downgrade -1` → clean
-  - [ ] 22.2 Test: `test_codebase_index_model_is_frozen` — `CodebaseIndex(...)` raises `FrozenInstanceError` on field assignment (Property 6)
-  - [ ] 22.3 Test: `test_index_scope_enum_values` — `IndexScope` has exactly `single` and `monorepo`
-  - [ ] 22.4 Test: `test_package_path_nullable` — `CodebaseIndex(package_path=None, ...)` valid for single-repo
-  - [ ] 22.5 Add Alembic migration: `codebase_indexes` table with all columns from `CodebaseIndex` model; composite index on `(repo_id, package_path, is_valid, version DESC)`
-  - [ ] 22.6 Implement `pr_reviewer/models/codebase_index.py` — `CodebaseIndex` frozen dataclass; `IndexScope` enum
+  - [x] 22.1 Test: `test_codebase_indexes_migration_applies_and_rolls_back` — round-trip `alembic upgrade head` then `downgrade -1` → clean
+  - [x] 22.2 Test: `test_codebase_index_model_is_frozen` — `CodebaseIndex(...)` raises `FrozenInstanceError` on field assignment (Property 6)
+  - [x] 22.3 Test: `test_index_scope_enum_values` — `IndexScope` has exactly `single` and `monorepo`
+  - [x] 22.4 Test: `test_package_path_nullable` — `CodebaseIndex(package_path=None, ...)` valid for single-repo
+  - [x] 22.5 Add Alembic migration: `codebase_indexes` table with all columns from `CodebaseIndex` model; composite index on `(repo_id, package_path, is_valid, version DESC)`
+  - [x] 22.6 Implement `pr_reviewer/models/codebase_index.py` — `CodebaseIndex` frozen dataclass; `IndexScope` enum
   _Requirements: 12.1, 12.2, 12.3, 12.7, 12.9, 14.1_
 
-- [ ] 23. Indexer **[v2]**
-  - [ ] 23.1 Test: `test_indexer_skips_repo_with_no_successful_review_job` — `jobs` table has no `status=complete` for repo → task returns early; INFO log "no successful review yet"
-  - [ ] 23.2 Test: `test_convention_profile_pattern_requires_60pct_agreement` — pattern in 11/20 files (55%) → omitted (Property 10)
-  - [ ] 23.3 Test: `test_convention_profile_pattern_at_exactly_60pct_included` — pattern in 12/20 files (60%) → included (Property 10)
-  - [ ] 23.4 Test: `test_convention_profile_samples_20_most_recently_modified_files` — 50 files in repo → exactly 20 fetched by most recent commit timestamp
-  - [ ] 23.5 Test: `test_finding_density_map_omitted_below_10_signals` — 9 signals → `finding_density_map=None`, WARN "insufficient signal: 9, need 10"
-  - [ ] 23.6 Test: `test_finding_density_map_included_at_10_signals` — exactly 10 signals → `finding_density_map` is not None
-  - [ ] 23.7 Test: `test_index_trimmed_to_max_tokens` — index content exceeds `index_max_tokens` → trimmed; `token_count <= config.index_max_tokens` (Property 9)
-  - [ ] 23.8 Test: `test_on_refresh_failure_last_valid_index_still_accessible` — Indexer raises mid-build → previous `is_valid=True` index unchanged
-  - [ ] 23.9 Test: `test_versioning_keeps_last_3_versions` — 4 successful refreshes → versions 1 and 2 get `is_valid=False`; versions 3 and 4 remain `is_valid=True`; version 1 not deleted
-  - [ ] 23.10 Test: `test_commit_sha_recorded_as_default_branch_head_at_build_time` — `commit_sha` == result of `get_branch_head_sha` at build start
-  - [ ] 23.11 Test: `test_monorepo_detection_finds_manifest_in_subdirectory` — `package.json` in `packages/api/` → `"packages/api"` in detected packages
-  - [ ] 23.12 Test: `test_monorepo_builds_separate_index_per_package` — 2 packages detected → 2 `CodebaseIndex` rows with different `package_path` values
-  - [ ] 23.13 Test: `test_indexer_uses_separate_rate_limit_bucket` — Indexer's `GitHubAPIClient` uses Redis key `{installation_id}:indexer` not `{installation_id}:review`
-  - [ ] 23.14 Test: `test_celery_beat_scheduled_at_02_utc_daily` — Beat schedule entry exists with `crontab(hour=2, minute=0)`
-  - [ ] 23.15 Test: `test_push_event_with_over_20_files_triggers_indexer_refresh` — WebhookReceiver receives `X-GitHub-Event: push` with payload listing 21 changed files on default branch → `run_index_refresh.apply_async(...)` called once; task enqueued on `indexer_jobs`
-  - [ ] 23.16 Test: `test_push_event_with_20_or_fewer_files_does_not_trigger_indexer` — push event with exactly 20 changed files → `run_index_refresh` not called
-  - [ ] 23.17 Implement `pr_reviewer/workers/indexer.py` — Celery task `run_index_refresh(repo_id, installation_id)`; `_detect_monorepo`, `_build_architectural_summary`, `_build_convention_profile`, `_build_finding_density_map`; dedicated `GitHubAPIClient` with `:indexer` Redis key suffix; Celery Beat entry at 02:00 UTC
-  - [ ] 23.18 Add push-event routing to `pr_reviewer/api/webhook.py` — `X-GitHub-Event: push` with >20 changed files enqueues `run_index_refresh` to `indexer_jobs`
+- [x] 23. Indexer **[v2]**
+  - [x] 23.1 Test: `test_indexer_skips_repo_with_no_successful_review_job` — `jobs` table has no `status=complete` for repo → task returns early; INFO log "no successful review yet"
+  - [x] 23.2 Test: `test_convention_profile_pattern_requires_60pct_agreement` — pattern in 11/20 files (55%) → omitted (Property 10)
+  - [x] 23.3 Test: `test_convention_profile_pattern_at_exactly_60pct_included` — pattern in 12/20 files (60%) → included (Property 10)
+  - [x] 23.4 Test: `test_convention_profile_samples_20_most_recently_modified_files` — 50 files in repo → exactly 20 fetched by most recent commit timestamp
+  - [x] 23.5 Test: `test_finding_density_map_omitted_below_10_signals` — 9 signals → `finding_density_map=None`, WARN "insufficient signal: 9, need 10"
+  - [x] 23.6 Test: `test_finding_density_map_included_at_10_signals` — exactly 10 signals → `finding_density_map` is not None
+  - [x] 23.7 Test: `test_index_trimmed_to_max_tokens` — index content exceeds `index_max_tokens` → trimmed; `token_count <= config.index_max_tokens` (Property 9)
+  - [x] 23.8 Test: `test_on_refresh_failure_last_valid_index_still_accessible` — Indexer raises mid-build → previous `is_valid=True` index unchanged
+  - [x] 23.9 Test: `test_versioning_keeps_last_3_versions` — 4 successful refreshes → versions 1 and 2 get `is_valid=False`; versions 3 and 4 remain `is_valid=True`; version 1 not deleted
+  - [x] 23.10 Test: `test_commit_sha_recorded_as_default_branch_head_at_build_time` — `commit_sha` == result of `get_branch_head_sha` at build start
+  - [x] 23.11 Test: `test_monorepo_detection_finds_manifest_in_subdirectory` — `package.json` in `packages/api/` → `"packages/api"` in detected packages
+  - [x] 23.12 Test: `test_monorepo_builds_separate_index_per_package` — 2 packages detected → 2 `CodebaseIndex` rows with different `package_path` values
+  - [x] 23.13 Test: `test_indexer_uses_separate_rate_limit_bucket` — Indexer's `GitHubAPIClient` uses Redis key `{installation_id}:indexer` not `{installation_id}:review`
+  - [x] 23.14 Test: `test_celery_beat_scheduled_at_02_utc_daily` — Beat schedule entry exists with `crontab(hour=2, minute=0)`
+  - [x] 23.15 Test: `test_push_event_with_over_20_files_triggers_indexer_refresh` — WebhookReceiver receives `X-GitHub-Event: push` with payload listing 21 changed files on default branch → `run_index_refresh.apply_async(...)` called once; task enqueued on `indexer_jobs`
+  - [x] 23.16 Test: `test_push_event_with_20_or_fewer_files_does_not_trigger_indexer` — push event with exactly 20 changed files → `run_index_refresh` not called
+  - [x] 23.17 Implement `pr_reviewer/workers/indexer.py` — Celery task `run_index_refresh(repo_id, installation_id)`; `_detect_monorepo`, `_build_architectural_summary`, `_build_convention_profile`, `_build_finding_density_map`; dedicated `GitHubAPIClient` with `:indexer` Redis key suffix; Celery Beat entry at 02:00 UTC
+  - [x] 23.18 Add push-event routing to `pr_reviewer/api/webhook.py` — `X-GitHub-Event: push` with >20 changed files enqueues `run_index_refresh` to `indexer_jobs`
   _Requirements: 12.1, 12.3, 12.4, 12.5, 12.6, 12.7, 12.8, 12.9, 12.10, 12.11, 14.1, 14.3, 14.5_
 
-- [ ] 24. Index-informed ReviewAgent behavior **[v2]**
-  - [ ] 24.1 Test: `test_style_finding_suppressed_for_pattern_in_convention_profile` — camelCase in `convention_profile` at >60% → camelCase-related style Finding removed by convention filter
-  - [ ] 24.2 Test: `test_style_finding_retained_when_no_codebase_index` — `codebase_index=None` → convention filter not applied; same behavior as v1
-  - [ ] 24.3 Test: `test_tool_budget_biases_toward_high_density_file` — `finding_density_map` shows `src/auth` as high-signal → `src/auth` files appear earlier in budget prioritisation list
-  - [ ] 24.4 Test: `test_security_candidate_in_security_boundary_lowered_threshold` — file tagged as security boundary in `architectural_summary` → agent escalates at confidence that would normally be suppressed
-  - [ ] 24.5 Test: `test_security_candidate_in_test_fixture_auto_discarded` — file tagged as test fixture → candidate removed without any tool call consumed
-  - [ ] 24.6 Test: `test_test_fixture_auto_discard_consumes_zero_budget` — fixture discard → `ToolBudgetMiddleware` counter unchanged
-  - [ ] 24.7 Test: `test_no_index_behavior_identical_to_v1` — `config.codebase_index_enabled=False` → no convention or density logic runs
-  - [ ] 24.8 Test: `test_eval_harness_index_contribution_delta_measured` — ablation: run corpus with/without `CodebaseIndex`; `precision_delta` and `recall_delta` in report
-  - [ ] 24.9 Extend `ReviewAgent.run` with `_apply_convention_filter`, `_prioritize_budget_by_density`; lower escalation threshold for security boundary files; auto-discard test fixture candidates
+- [x] 24. Index-informed ReviewAgent behavior **[v2]**
+  - [x] 24.1 Test: `test_style_finding_suppressed_for_pattern_in_convention_profile` — camelCase in `convention_profile` at >60% → camelCase-related style Finding removed by convention filter
+  - [x] 24.2 Test: `test_style_finding_retained_when_no_codebase_index` — `codebase_index=None` → convention filter not applied; same behavior as v1
+  - [x] 24.3 Test: `test_tool_budget_biases_toward_high_density_file` — `finding_density_map` shows `src/auth` as high-signal → `src/auth` files appear earlier in budget prioritisation list
+  - [x] 24.4 Test: `test_security_candidate_in_security_boundary_lowered_threshold` — file tagged as security boundary in `architectural_summary` → agent escalates at confidence that would normally be suppressed
+  - [x] 24.5 Test: `test_security_candidate_in_test_fixture_auto_discarded` — file tagged as test fixture → candidate removed without any tool call consumed
+  - [x] 24.6 Test: `test_test_fixture_auto_discard_consumes_zero_budget` — fixture discard → `ToolBudgetMiddleware` counter unchanged
+  - [x] 24.7 Test: `test_no_index_behavior_identical_to_v1` — `config.codebase_index_enabled=False` → no convention or density logic runs
+  - [x] 24.8 Test: `test_eval_harness_index_contribution_delta_measured` — ablation: run corpus with/without `CodebaseIndex`; `precision_delta` and `recall_delta` in report
+  - [x] 24.9 Extend `ReviewAgent.run` with `_apply_convention_filter`, `_prioritize_budget_by_density`; lower escalation threshold for security boundary files; auto-discard test fixture candidates
   _Requirements: 13.1, 13.2, 13.3, 13.4, 13.5_
 
-- [ ] 25. v2 agent tools — linter and license **[v2]**
-  - [ ] 25.1 Test: `test_run_linter_invokes_correct_binary_for_language` — Python file → `pylint` subprocess; JS/TS → `eslint`; Go → `golangci-lint`
-  - [ ] 25.2 Test: `test_run_linter_subprocess_has_30s_timeout` — mock subprocess that hangs → `TimeoutExpired` caught; empty results returned; WARN logged
-  - [ ] 25.3 Test: `test_run_linter_returns_empty_when_binary_missing` — no `pylint` on PATH → `[]` + WARN "linter unavailable for python"
-  - [ ] 25.4 Test: `test_run_linter_respects_max_linter_files_cap` — 7 lintable files, `max_linter_files=5` → linter called 5 times; WARN logged with 2 skipped file names
-  - [ ] 25.5 Test: `test_run_linter_prioritizes_files_by_most_changed_lines` — files with 100, 50, 200 changed lines → ordered 200, 100, 50 before applying cap
-  - [ ] 25.6 Test: `test_check_license_triggered_on_new_package_json_dependency` — diff adds line to `package.json` `"dependencies"` block → `check_license` called for new package
-  - [ ] 25.7 Test: `test_check_license_violation_produces_high_severity_bugs_finding` — AGPL package with MIT policy → `Finding(severity=high, category=bugs)`
-  - [ ] 25.8 Add `run_linter` and `check_license` tools to `pr_reviewer/agents/tools.py`; manifest detection in ReviewAgent; `LinterFinding` and `LicenseResult` frozen dataclasses
+- [x] 25. v2 agent tools — linter and license **[v2]**
+  - [x] 25.1 Test: `test_run_linter_invokes_correct_binary_for_language` — Python file → `pylint` subprocess; JS/TS → `eslint`; Go → `golangci-lint`
+  - [x] 25.2 Test: `test_run_linter_subprocess_has_30s_timeout` — mock subprocess that hangs → `TimeoutExpired` caught; empty results returned; WARN logged
+  - [x] 25.3 Test: `test_run_linter_returns_empty_when_binary_missing` — no `pylint` on PATH → `[]` + WARN "linter unavailable for python"
+  - [x] 25.4 Test: `test_run_linter_respects_max_linter_files_cap` — 7 lintable files, `max_linter_files=5` → linter called 5 times; WARN logged with 2 skipped file names
+  - [x] 25.5 Test: `test_run_linter_prioritizes_files_by_most_changed_lines` — files with 100, 50, 200 changed lines → ordered 200, 100, 50 before applying cap
+  - [x] 25.6 Test: `test_check_license_triggered_on_new_package_json_dependency` — diff adds line to `package.json` `"dependencies"` block → `check_license` called for new package
+  - [x] 25.7 Test: `test_check_license_violation_produces_high_severity_bugs_finding` — AGPL package with MIT policy → `Finding(severity=high, category=bugs)`
+  - [x] 25.8 Add `run_linter` and `check_license` tools to `pr_reviewer/agents/tools.py`; manifest detection in ReviewAgent; `LinterFinding` and `LicenseResult` frozen dataclasses
   _Requirements: 15.1, 15.2, 15.3_
 
-- [ ] 26. v2 agent tools — MCP ecosystem **[v2]**
-  - [ ] 26.1 Test: `test_ghsa_lookup_calls_github_advisory_endpoint` — `GET https://api.github.com/advisories?...` called with ecosystem + package + version
-  - [ ] 26.2 Test: `test_snyk_lookup_falls_back_on_rate_limit_bucket_exhausted` — Snyk token bucket exhausted → fallback to `cve_snapshot`
-  - [ ] 26.3 Test: `test_owasp_check_matches_sql_injection_pattern` — SQL string concat pattern + Python → returns OWASP A03 match
-  - [ ] 26.4 Test: `test_owasp_check_no_match_returns_empty` — safe parameterized query → `[]`
-  - [ ] 26.5 Test: `test_v2_mcp_tools_count_against_tool_budget` — `ghsa_lookup`, `snyk_lookup`, `owasp_check` all increment `ToolBudgetMiddleware` counter (Property 4)
-  - [ ] 26.6 Add `ghsa_lookup`, `snyk_lookup`, `owasp_check` to `pr_reviewer/kb/mcp_client.py` with per-server token buckets; expose to ReviewAgent as Tool_Budget-counting tools; `OWASPMatch` frozen dataclass
+- [x] 26. v2 agent tools — MCP ecosystem **[v2]**
+  - [x] 26.1 Test: `test_ghsa_lookup_calls_github_advisory_endpoint` — `GET https://api.github.com/advisories?...` called with ecosystem + package + version
+  - [x] 26.2 Test: `test_snyk_lookup_falls_back_on_rate_limit_bucket_exhausted` — Snyk token bucket exhausted → fallback to `cve_snapshot`
+  - [x] 26.3 Test: `test_owasp_check_matches_sql_injection_pattern` — SQL string concat pattern + Python → returns OWASP A03 match
+  - [x] 26.4 Test: `test_owasp_check_no_match_returns_empty` — safe parameterized query → `[]`
+  - [x] 26.5 Test: `test_v2_mcp_tools_count_against_tool_budget` — `ghsa_lookup`, `snyk_lookup`, `owasp_check` all increment `ToolBudgetMiddleware` counter (Property 4)
+  - [x] 26.6 Add `ghsa_lookup`, `snyk_lookup`, `owasp_check` to `pr_reviewer/kb/mcp_client.py` with per-server token buckets; expose to ReviewAgent as Tool_Budget-counting tools; `OWASPMatch` frozen dataclass
   _Requirements: 15.1, 15.2_
 
-- [ ] 27. Cross-repository fix corpus and per-language weighting **[v2]**
-  - [ ] 27.1 Test: `test_positive_signal_with_cross_repo_enabled_calls_add_cross_repo` — `signal_type=positive`, `config.cross_repo_sharing=True` → `add_cross_repo_fix` called
-  - [ ] 27.2 Test: `test_cross_repo_sharing_false_does_not_call_add_cross_repo` — `config.cross_repo_sharing=False` (default) → `add_cross_repo_fix` never called
-  - [ ] 27.3 Test: `test_add_cross_repo_fix_stores_abstract_pattern_not_code` — entry `content` passes code-concreteness check; no raw code stored
-  - [ ] 27.4 Test: `test_code_concreteness_classifier_rejects_entry_with_4_code_lines` — input with 4 lines matching code syntax → `ValueError` raised; not persisted
-  - [ ] 27.5 Test: `test_code_concreteness_classifier_accepts_entry_with_3_code_lines` — exactly 3 lines → accepted
-  - [ ] 27.6 Test: `test_cross_repo_entry_tagged_with_language_category_and_type` — stored entry metadata includes `language`, `category`, `vulnerability_type`, `installation_id`
-  - [ ] 27.7 Test: `test_rollback_to_previous_version_excludes_newer_entries` — after rollback to v2, only v1 and v2 entries returned by `KnowledgeBase.query`
-  - [ ] 27.8 Test: `test_corpus_retains_last_5_versions` — 6 versions exist → version 1 deactivated; versions 2–6 retained
-  - [ ] 27.9 Test: `test_query_with_weight_produces_different_ranking_than_without` — same query, `python: 1.5` weight vs no weight → ranking differs for Python entries
-  - [ ] 27.10 Implement `pr_reviewer/kb/cross_repo.py` — `CrossRepoLearning` with `add_cross_repo_fix` and `_check_code_concreteness`; secret scrubbing; embeds and inserts into `cross_repo_fixes` collection; corpus versioning with retain-last-5 policy
-  - [ ] 27.11 Extend `pr_reviewer/workers/feedback_processor.py` — after `FeedbackStore.insert`, call `CrossRepoLearning.add_cross_repo_fix` when `signal.signal_type == positive` and `config.cross_repo_sharing == True`
+- [x] 27. Cross-repository fix corpus and per-language weighting **[v2]**
+  - [x] 27.1 Test: `test_positive_signal_with_cross_repo_enabled_calls_add_cross_repo` — `signal_type=positive`, `config.cross_repo_sharing=True` → `add_cross_repo_fix` called
+  - [x] 27.2 Test: `test_cross_repo_sharing_false_does_not_call_add_cross_repo` — `config.cross_repo_sharing=False` (default) → `add_cross_repo_fix` never called
+  - [x] 27.3 Test: `test_add_cross_repo_fix_stores_abstract_pattern_not_code` — entry `content` passes code-concreteness check; no raw code stored
+  - [x] 27.4 Test: `test_code_concreteness_classifier_rejects_entry_with_4_code_lines` — input with 4 lines matching code syntax → `ValueError` raised; not persisted
+  - [x] 27.5 Test: `test_code_concreteness_classifier_accepts_entry_with_3_code_lines` — exactly 3 lines → accepted
+  - [x] 27.6 Test: `test_cross_repo_entry_tagged_with_language_category_and_type` — stored entry metadata includes `language`, `category`, `vulnerability_type`, `installation_id`
+  - [x] 27.7 Test: `test_rollback_to_previous_version_excludes_newer_entries` — after rollback to v2, only v1 and v2 entries returned by `KnowledgeBase.query`
+  - [x] 27.8 Test: `test_corpus_retains_last_5_versions` — 6 versions exist → version 1 deactivated; versions 2–6 retained
+  - [x] 27.9 Test: `test_query_with_weight_produces_different_ranking_than_without` — same query, `python: 1.5` weight vs no weight → ranking differs for Python entries
+  - [x] 27.10 Implement `pr_reviewer/kb/cross_repo.py` — `CrossRepoLearning` with `add_cross_repo_fix` and `_check_code_concreteness`; secret scrubbing; embeds and inserts into `cross_repo_fixes` collection; corpus versioning with retain-last-5 policy
+  - [x] 27.11 Extend `pr_reviewer/workers/feedback_processor.py` — after `FeedbackStore.insert`, call `CrossRepoLearning.add_cross_repo_fix` when `signal.signal_type == positive` and `config.cross_repo_sharing == True`
   _Requirements: 16.1, 16.2, 16.3, 16.4, 16.5_
 
-- [ ] 28. v2 evaluation harness — knowledge retrieval quality **[v2]**
-  - [ ] 28.1 Test: `test_ablation_run_computes_delta_precision_per_category` — two run results (KB enabled, disabled) → `delta_precision` per category in ablation report
-  - [ ] 28.2 Test: `test_retrieval_relevance_scored_per_kb_call` — eval trace with 3 `query_knowledge_base` calls → 3 relevance scores produced using `relevance_judge`
-  - [ ] 28.3 Test: `test_mean_relevance_computed_per_corpus` — 5 calls to `cve_snapshot`, 3 to `org_guidelines` → separate mean scores per corpus
-  - [ ] 28.4 Test: `test_tool_budget_attribution_separates_kb_from_codebase_calls` — attribution result has `kb_calls: int` and `codebase_calls: int` summing to total budget used
-  - [ ] 28.5 Test: `test_corpus_flagged_when_mean_relevance_below_0_6_for_3_runs` — 3 consecutive eval runs with `cve_snapshot` mean relevance 0.4 → corpus flagged; notification triggered
-  - [ ] 28.6 Test: `test_corpus_not_flagged_on_only_2_consecutive_low_runs` — 2 runs below threshold, then 1 above → not flagged
-  - [ ] 28.7 Test: `test_index_contribution_delta_reported` — eval with `CodebaseIndex` vs without → precision/recall/FP delta in `IndexContributionReport`
-  - [ ] 28.8 Test: `test_retrieval_relevance_written_to_kb_retrieval_relevance_metric` — after eval run, `kb.retrieval_relevance` OTel gauge updated per corpus
-  - [ ] 28.9 Implement `eval/tasks/ablation.py` — Inspect AI task; runs corpus twice (KB on/off); reports delta table per category
-  - [ ] 28.10 Implement `eval/tasks/index_contribution.py` — ablation toggling `codebase_index_enabled`; produces `IndexContributionReport`
-  - [ ] 28.11 Implement `eval/retrieval_quality.py` — `score_retrieval_calls(trace, findings) -> dict[str, float]` using `relevance_judge`
-  - [ ] 28.12 Implement `eval/budget_attribution.py` — `attribute_budget(tool_calls) -> BudgetAttribution(kb_calls, codebase_calls, total)`
-  - [ ] 28.13 Implement `eval/corpus_health.py` — `CorpusHealthMonitor` with 3-run rolling window; `check_and_flag` triggers hook at <0.6 mean relevance for 3 consecutive runs
-  - [ ] 28.14 Add Alembic migration: `eval_corpus_health` table
+- [x] 28. v2 evaluation harness — knowledge retrieval quality **[v2]**
+  - [x] 28.1 Test: `test_ablation_run_computes_delta_precision_per_category` — two run results (KB enabled, disabled) → `delta_precision` per category in ablation report
+  - [x] 28.2 Test: `test_retrieval_relevance_scored_per_kb_call` — eval trace with 3 `query_knowledge_base` calls → 3 relevance scores produced using `relevance_judge`
+  - [x] 28.3 Test: `test_mean_relevance_computed_per_corpus` — 5 calls to `cve_snapshot`, 3 to `org_guidelines` → separate mean scores per corpus
+  - [x] 28.4 Test: `test_tool_budget_attribution_separates_kb_from_codebase_calls` — attribution result has `kb_calls: int` and `codebase_calls: int` summing to total budget used
+  - [x] 28.5 Test: `test_corpus_flagged_when_mean_relevance_below_0_6_for_3_runs` — 3 consecutive eval runs with `cve_snapshot` mean relevance 0.4 → corpus flagged; notification triggered
+  - [x] 28.6 Test: `test_corpus_not_flagged_on_only_2_consecutive_low_runs` — 2 runs below threshold, then 1 above → not flagged
+  - [x] 28.7 Test: `test_index_contribution_delta_reported` — eval with `CodebaseIndex` vs without → precision/recall/FP delta in `IndexContributionReport`
+  - [x] 28.8 Test: `test_retrieval_relevance_written_to_kb_retrieval_relevance_metric` — after eval run, `kb.retrieval_relevance` OTel gauge updated per corpus
+  - [x] 28.9 Implement `eval/tasks/ablation.py` — Inspect AI task; runs corpus twice (KB on/off); reports delta table per category
+  - [x] 28.10 Implement `eval/tasks/index_contribution.py` — ablation toggling `codebase_index_enabled`; produces `IndexContributionReport`
+  - [x] 28.11 Implement `eval/retrieval_quality.py` — `score_retrieval_calls(trace, findings) -> dict[str, float]` using `relevance_judge`
+  - [x] 28.12 Implement `eval/budget_attribution.py` — `attribute_budget(tool_calls) -> BudgetAttribution(kb_calls, codebase_calls, total)`
+  - [x] 28.13 Implement `eval/corpus_health.py` — `CorpusHealthMonitor` with 3-run rolling window; `check_and_flag` triggers hook at <0.6 mean relevance for 3 consecutive runs
+  - [x] 28.14 Add Alembic migration: `eval_corpus_health` table
   _Requirements: 13.5, 17.1, 17.2, 17.3, 17.4_
 
 ## Notes

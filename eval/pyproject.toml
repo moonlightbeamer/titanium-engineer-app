@@ -1,0 +1,17 @@
+[project]
+name = "pr-reviewer-eval"
+version = "0.1.0"
+description = "Standalone evaluation harness for the PR review service"
+requires-python = ">=3.12"
+dependencies = [
+    "inspect-ai>=0.3.0",
+    "litellm>=1.40.0",
+    "sqlalchemy>=2.0.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

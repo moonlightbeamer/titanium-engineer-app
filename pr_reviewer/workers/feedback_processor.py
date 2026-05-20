@@ -22,9 +22,17 @@ _NEGATIVE_MARKERS = ("won't fix", "wontfix", "not applicable", "by design")
 
 
 class FeedbackProcessor:
-    def __init__(self, feedback_store: FeedbackStore, secret_scrubber: Any) -> None:
+    def __init__(
+        self,
+        feedback_store: "FeedbackStore",
+        secret_scrubber: Any,
+        config: Any = None,
+        cross_repo_learning: Any = None,
+    ) -> None:
         self._store = feedback_store
         self._scrubber = secret_scrubber
+        self._config = config
+        self._cross_repo = cross_repo_learning
 
     def process(self, event_type: str, payload: dict) -> None:
         if event_type not in _SUPPORTED_EVENTS:
@@ -49,6 +57,24 @@ class FeedbackProcessor:
             timestamp=datetime.now(tz=UTC),
         )
         self._store.insert(signal)
+
+        # v2: cross-repo learning
+        if (
+            self._cross_repo is not None
+            and self._config is not None
+            and getattr(self._config, "cross_repo_sharing", False)
+            and signal_type == SignalType.positive
+        ):
+            try:
+                self._cross_repo.add_cross_repo_fix(
+                    signal=signal,
+                    content=scrubbed_body,
+                    finding_category=str(category),
+                    language="unknown",
+                    vulnerability_type="unknown",
+                )
+            except (ValueError, Exception) as exc:
+                _logger.warning(f"cross_repo add_fix skipped: {exc}")
 
 
 # ── Module-level helpers (importable for direct testing) ─────────────────────

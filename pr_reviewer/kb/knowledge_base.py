@@ -180,3 +180,37 @@ class KnowledgeBase:
 
     def validate_model_versions(self) -> bool:
         return self._validate_model_versions()
+
+
+# ── Module-level helpers ──────────────────────────────────────────────────────
+
+_WEIGHTED_CORPORA = frozenset({"language_best_practices", "cross_repo_fixes"})
+
+
+def _apply_language_weight(
+    entries: list[KBEntry],
+    language_corpus_weights: dict[str, float],
+    weighted_corpora: frozenset[str] | None = None,
+) -> list[KBEntry]:
+    """Return a new list with scores boosted by per-language weights for eligible corpora."""
+    if weighted_corpora is None:
+        weighted_corpora = _WEIGHTED_CORPORA
+    result: list[KBEntry] = []
+    for entry in entries:
+        if entry.corpus in weighted_corpora:
+            lang = entry.language_tag or ""
+            weight = language_corpus_weights.get(lang, 1.0)
+            result.append(KBEntry(
+                id=entry.id,
+                content=entry.content,
+                corpus=entry.corpus,
+                language_tag=entry.language_tag,
+                category=entry.category,
+                score=entry.score * weight,
+                model_version=entry.model_version,
+                source=entry.source,
+            ))
+        else:
+            result.append(entry)
+    result.sort(key=lambda e: e.score, reverse=True)
+    return result

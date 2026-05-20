@@ -22,6 +22,11 @@ ALL_TOOL_NAMES: list[str] = [
     "get_symbol_usages",
     "lookup_cve",
     "check_package_advisory",
+    # v2 tools
+    "ghsa_lookup",
+    "snyk_lookup",
+    "owasp_check",
+    "run_linter",
 ]
 
 
@@ -88,6 +93,47 @@ def create_tools(
         budget.track("check_package_advisory")
         return ctx.mcp_client.check_package_advisory(package=package)
 
+    def ghsa_lookup(
+        package: str = "",
+        version: str = "",
+        ecosystem: str = "",
+        **kwargs: Any,
+    ) -> Any:
+        budget.track("ghsa_lookup")
+        return ctx.mcp_client.ghsa_lookup(
+            package=package, version=version, ecosystem=ecosystem
+        )
+
+    def snyk_lookup(
+        package: str = "",
+        version: str = "",
+        ecosystem: str = "",
+        **kwargs: Any,
+    ) -> Any:
+        budget.track("snyk_lookup")
+        return ctx.mcp_client.snyk_lookup(
+            package=package, version=version, ecosystem=ecosystem
+        )
+
+    def owasp_check(
+        code_snippet: str = "",
+        language: str = "",
+        **kwargs: Any,
+    ) -> Any:
+        budget.track("owasp_check")
+        return ctx.mcp_client.owasp_check(
+            code_snippet=code_snippet, language=language
+        )
+
+    def run_linter_tool(
+        files: list[Any] | None = None,
+        max_files: int = 5,
+        **kwargs: Any,
+    ) -> Any:
+        budget.track("run_linter")
+        from pr_reviewer.agents.linter import run_linter
+        return run_linter(files or [], max_files=max_files)
+
     return [
         Tool(name="fetch_pr_metadata", func=fetch_pr_metadata),
         Tool(name="read_findings_so_far", func=read_findings_so_far),
@@ -98,4 +144,8 @@ def create_tools(
         Tool(name="get_symbol_usages", func=get_symbol_usages),
         Tool(name="lookup_cve", func=lookup_cve),
         Tool(name="check_package_advisory", func=check_package_advisory),
+        Tool(name="ghsa_lookup", func=ghsa_lookup),
+        Tool(name="snyk_lookup", func=snyk_lookup),
+        Tool(name="owasp_check", func=owasp_check),
+        Tool(name="run_linter", func=run_linter_tool),
     ]

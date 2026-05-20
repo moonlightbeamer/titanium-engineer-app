@@ -373,3 +373,212 @@ Chronological record of implementation steps. Appended after each task completes
 ---
 
 **Running totals:** 154 unit tests · 6 integration tests · 3 pre-existing OTel isolation failures · lint clean
+
+---
+
+### Task 18 — Evaluation harness scaffold
+
+- Created standalone `eval/` package with its own `eval/pyproject.toml` — no runtime dependency on `pr_reviewer`; deps are `inspect-ai`, `litellm`, `sqlalchemy`.
+- Created `eval/db.py` — SQLAlchemy `MetaData` and `get_engine()` reading `DATABASE_URL` from env; `eval_runs` and `vibe_scores` table definitions.
+- Created `eval/corpus.py`:
+  - `CorpusValidationError(ValueError)` for corpus constraint violations.
+  - `EvalSample` frozen dataclass with `pr_id`, `diff`, `findings`, `label`, `finding_category` fields.
+  - `load_corpus(samples, min_prs=20, min_safe=10, min_security=5)` — raises `CorpusValidationError` if fewer than 20 total PRs, fewer than 10 safe PRs, or fewer than 5 security PRs; validated with three independent checks.
+- Added Alembic migration `004_eval_runs.py` — `eval_runs` table: `id UUID PK`, `run_type TEXT`, `started_at TIMESTAMPTZ`, `completed_at TIMESTAMPTZ`, `report JSONB`, `corpus_version TEXT`.
+
+**Tests:** 7 unit tests — all green. Zero `from pr_reviewer` imports in `eval/` confirmed.
+
+**Files created:** `eval/pyproject.toml`, `eval/__init__.py`, `eval/db.py`, `eval/corpus.py`, `alembic/versions/004_eval_runs.py`, `tests/unit/test_eval_harness.py` (renamed later).
+
+---
+
+### Task 19 — Eval judge suite
+
+- Created six judge files under `eval/judges/`:
+  - `_base.py` — `JudgeResult(frozen=True)` with `score: int`, `rationale: str`, `model_used: str`; `call_judge(model, prompt)` calls `litellm.completion` and parses JSON response; raises on score outside 0–10.
+  - `relevance_judge.py`, `accuracy_judge.py`, `actionability_judge.py`, `clarity_judge.py` — each builds a domain-specific prompt and delegates to `call_judge`.
+  - `verification_trace_judge.py` — receives the tool call chain used before a security Finding; evaluates whether the verification steps were sufficient.
+  - `quality_with_cot_judge.py` — chain-of-thought judge used by the weekly vibe task; returns full reasoning trace alongside score.
+- Created `eval/classical_metrics.py`:
+  - `validate_schema(finding)` → `bool` — checks required fields present.
+  - `check_regex(finding)` → `bool` — security findings must have `line_number`; fails otherwise.
+  - `token_f1(prediction, reference)` → `float` — token-level F1 score against a reference fix string.
+- Created `eval/bias_detection.py`:
+  - `BiasResult` frozen dataclass with `score_model_a`, `score_model_b`, `models_used`.
+  - `detect_same_family_bias(finding, diff)` — calls the relevance judge with GPT-4o (OpenAI) and Claude Sonnet (Anthropic); flags if score delta exceeds threshold.
+- Created `eval/eval_runner.py`:
+  - `ScoreVector(NamedTuple)` with `relevance`, `accuracy`, `actionability`, `clarity`.
+  - `evaluate_finding(finding, diff, label)` — calls all 4 dimension judges; returns `ScoreVector` (not a mean, preserving independent signal).
+
+**Tests:** 7 unit tests — all green.
+
+**Files created:** `eval/judges/_base.py`, `eval/judges/relevance_judge.py`, `eval/judges/accuracy_judge.py`, `eval/judges/actionability_judge.py`, `eval/judges/clarity_judge.py`, `eval/judges/verification_trace_judge.py`, `eval/judges/quality_with_cot_judge.py`, `eval/classical_metrics.py`, `eval/bias_detection.py`, `eval/eval_runner.py`, `tests/unit/test_eval_judges.py`.
+
+---
+
+### Task 20 — Eval trigger modes and summary report
+
+- Created `eval/tasks/pre_ship.py`:
+  - `PreShipFailure(RuntimeError)` raised when any security false positive is present.
+  - `run_pre_ship(corpus, eval_runner_fn)` — runs all 6 judges + classical metrics over the full corpus; raises `PreShipFailure` on the first security FP, causing a non-zero exit.
+- Created `eval/tasks/weekly_vibe.py`:
+  - `sample_findings(findings, n=10, seed=None)` — deterministic sampling using `random.Random(seed)`; selects exactly 10 findings for human review; writes scores to `vibe_scores` table; runs `quality_with_cot_judge` alongside human scores; logs Pearson correlation between human and CoT scores.
+- Created `eval/tasks/meta_prompt.py`:
+  - `run_meta_prompt(findings, eval_runner_fn)` — selects 5 lowest-scoring findings by `quality_with_cot_judge`; builds a reflector prompt asking an LLM to revise the system prompt; returns `{"revised_prompt": ..., "delta": ..., "applied": False}`; **never auto-applies** the revised prompt to the deployed agent.
+- Created `eval/report.py`:
+  - `EvalReport(frozen=True)` with `run_id`, `run_type`, `precision`/`recall`/`false_positive_count` per category, `relevance`/`accuracy`/`actionability`/`clarity` mean scores, `avg_cost_usd`, `avg_latency_ms`, `delta` vs previous run, `feedback_signals_per_category`, `kb_quality` map.
+  - `generate_report(run_id, run_type, findings, judge_scores)` — computes all metrics; persists to `eval_runs.report` JSONB; queries the previous `eval_runs` record to compute `delta` field.
+- Added Alembic migration `007_vibe_scores.py` — `vibe_scores` table: `id UUID PK`, `eval_run_id UUID`, `finding_id UUID`, `human_score INT`, `cot_score FLOAT`, `scored_at TIMESTAMPTZ`; index on `eval_run_id`.
+
+**Tests:** 11 unit tests — all green.
+
+**Files created:** `eval/tasks/pre_ship.py`, `eval/tasks/weekly_vibe.py`, `eval/tasks/meta_prompt.py`, `eval/report.py`, `alembic/versions/007_vibe_scores.py`, `tests/unit/test_eval_report.py`.
+
+---
+
+### Task 21 — Knowledge Base CLI
+
+- Created `pr_reviewer/kb/cli.py` (417 lines) — Click CLI group `kb` with 9 subcommands:
+  - `add` — validates entry JSON against required fields (`corpus`, `category`, `content`, `problem_description`, `resolution`); enforces 50-char minimums on `problem_description` and `resolution`; rejects `code_pattern` with >3 code-like lines via `_validate_entry()`; stores with `is_draft=True` when `--draft` flag set.
+  - `approve` — sets `is_draft=False`; entry becomes queryable.
+  - `deprecate` — sets `is_active=False`; row retained in DB.
+  - `list` — tabular output filtered by corpus/language/status.
+  - `show` — full JSON output for a single entry by ID.
+  - `rollback --corpus --version` — sets target version `is_active=True`; deactivates newer versions; retains all 6+ versions in DB.
+  - `reembed --corpus` — updates `model_version` on all `is_active=True` entries; re-embeds using current embedding model.
+  - `validate` — dry-run validation of a JSON entry without insertion.
+  - `bootstrap` — seeds `cve_snapshot` with ≥5 entries and `org_guidelines` with ≥1 entry from bundled data files.
+- Added Alembic migrations: `005_kb_entries.py` — `knowledge_base_entries` table with partial unique index `ix_kb_entries_one_active_per_version` (`WHERE is_active = TRUE`); `006_corpus_versions.py` — `corpus_versions` table with unique constraint on `(corpus, version)`.
+
+**Tests:** 11 unit tests — all green.
+
+**Files created:** `pr_reviewer/kb/cli.py`, `alembic/versions/005_kb_entries.py`, `alembic/versions/006_corpus_versions.py`, `tests/unit/test_kb_cli.py`.
+
+---
+
+### Task 22 — CodebaseIndex data model and migration
+
+- Extended `pr_reviewer/models/codebase_index.py` with the full v2 model (the task 16 stub had minimal fields):
+  - `IndexScope(str, Enum)` — `single` | `monorepo`.
+  - `CodebaseIndex(frozen=True)` dataclass: `repo_id`, `commit_sha`, `content`, `id: UUID` (default `uuid4()`), `scope: IndexScope` (default `single`), `package_path: str | None`, `is_valid: bool`, `version: int`, `token_count: int`, `created_at: datetime` (UTC-aware).
+- Added Alembic migration `008_codebase_indexes.py` — `codebase_indexes` table; composite index `ix_codebase_indexes_lookup` on `(repo_id, package_path, is_valid, version DESC)`.
+- **Fix in tests:** `CodebaseIndex` now has `id` and `scope` fields with defaults, so existing job-processor tests needed a `_make_index(**kwargs)` factory helper to supply all required fields.
+
+**Tests:** 4 unit tests — all green.
+
+**Files modified:** `pr_reviewer/models/codebase_index.py`. **Created:** `alembic/versions/008_codebase_indexes.py`, `tests/unit/test_codebase_index_model.py`.
+
+---
+
+### Task 23 — Indexer [v2]
+
+- Created `pr_reviewer/workers/indexer.py` (240 lines):
+  - Celery task `run_index_refresh(repo_id, installation_id)` — returns early with INFO log "no successful review yet" if no `status=complete` job exists for the repo; uses a dedicated `GitHubAPIClient` with Redis key suffix `:indexer` (separate rate-limit bucket from `:review`).
+  - `_detect_monorepo(repo_id, github_client)` — scans top-level and one level deep for manifest files (`package.json`, `pyproject.toml`, `go.mod`, `Cargo.toml`, `pom.xml`); returns list of package paths for monorepos.
+  - `_build_convention_profile(files, github_client)` — samples 20 most recently modified files; a pattern is included only at ≥60% agreement (12/20 files); patterns below 55% are omitted.
+  - `_build_finding_density_map(signals)` — returns `None` with WARN "insufficient signal: N, need 10" when fewer than 10 signals; otherwise maps file prefixes to signal density.
+  - `_trim_to_token_limit(content, max_tokens)` — trims index content to `config.index_max_tokens`; approximates token count as `len(content) // 4`.
+  - Version management: keeps last 3 valid versions; older versions get `is_valid=False` but are never deleted.
+  - Celery Beat schedule: `crontab(hour=2, minute=0)` UTC daily.
+  - Monorepo support: builds a separate `CodebaseIndex` per detected package (different `package_path` values).
+- Added push-event routing to `pr_reviewer/api/webhook.py` — `X-GitHub-Event: push` with >20 changed files on the default branch enqueues `run_index_refresh` to `indexer_jobs`; exactly 20 files does not trigger.
+
+**Tests:** 16 unit tests — all green.
+
+**Files created:** `pr_reviewer/workers/indexer.py`, `tests/unit/test_indexer.py`. **Modified:** `pr_reviewer/api/webhook.py`.
+
+---
+
+### Task 24 — Index-informed ReviewAgent behavior [v2]
+
+- Extended `pr_reviewer/agents/review_agent.py` with three index-driven behaviors:
+  - `_apply_convention_filter(findings, codebase_index)` — suppresses style findings whose pattern is present in `convention_profile` at >60%; when `codebase_index=None` the filter is a no-op (v1 parity preserved).
+  - `_prioritize_budget_by_density(candidates, codebase_index)` — reorders tool-call candidates so files in high-density areas of `finding_density_map` come first within the tool budget window.
+  - Security boundary escalation — files tagged as security boundaries in `architectural_summary` lower the confidence threshold for escalation; test fixture files are auto-discarded before consuming any budget.
+- All v2 logic is gated on `codebase_index is not None`; `config.codebase_index_enabled=False` leaves behavior identical to v1 (verified by `test_no_index_behavior_identical_to_v1`).
+- Eval ablation hook: `test_eval_harness_index_contribution_delta_measured` confirms precision and recall deltas are captured when running corpus with/without `CodebaseIndex`.
+
+**Tests:** 9 unit tests — all green.
+
+**Files modified:** `pr_reviewer/agents/review_agent.py`. **Created:** `tests/unit/test_review_agent_v2.py`.
+
+---
+
+### Task 25 — v2 agent tools: linter and license [v2]
+
+- Created `pr_reviewer/agents/linter.py` (179 lines):
+  - `LintTarget(frozen=True)` — `file_path: str`, `language: str`, `changed_lines: int`.
+  - `LinterFinding(frozen=True)` — `file_path`, `line`, `message`, `rule_id`.
+  - `LicenseResult(frozen=True)` — `package`, `version`, `license`, `violation: bool`, `policy`.
+  - `run_linter(targets, max_files)` — language→binary map (`python→pylint`, `javascript→eslint`, `typescript→eslint`, `go→golangci-lint`); sorts targets by descending `changed_lines` before applying `max_files` cap; logs WARN with skipped file names when cap is hit; 30s subprocess timeout with graceful fallback; returns `[]` + WARN when binary not on PATH.
+  - `check_license(package, version, policy)` — evaluates license compatibility; AGPL-3.0 with an MIT policy produces a `Finding(severity=high, category=bugs)`.
+- Added `run_linter` and `check_license` to `pr_reviewer/agents/tools.py`; added manifest detection in `ReviewAgent` to trigger license checks on new `package.json` dependencies.
+
+**Tests:** 7 unit tests — all green.
+
+**Files created:** `pr_reviewer/agents/linter.py`, `tests/unit/test_v2_tools_linter.py`. **Modified:** `pr_reviewer/agents/tools.py`, `pr_reviewer/agents/review_agent.py`.
+
+---
+
+### Task 26 — v2 agent tools: MCP ecosystem [v2]
+
+- Extended `pr_reviewer/kb/mcp_client.py` with three new tools:
+  - `ghsa_lookup(ecosystem, package, version)` — calls `GET https://api.github.com/advisories` with query params; counts against tool budget; returns list of advisory dicts.
+  - `snyk_lookup(package, version)` — uses a per-server Redis token bucket; falls back to `cve_snapshot` corpus query when bucket is exhausted; tagged `source: fallback_corpus` on fallback.
+  - `owasp_check(code_snippet, language)` — pattern-matches against OWASP Top 10 patterns; SQL string concatenation in Python → `OWASPMatch(category="A03", description="SQL injection risk")`; returns `[]` for safe patterns.
+  - `OWASPMatch(frozen=True)` — `category`, `description`, `confidence`.
+- All three tools registered as `ToolBudgetMiddleware`-counting tools; every call increments the budget counter.
+
+**Tests:** 5 unit tests — all green.
+
+**Files modified:** `pr_reviewer/kb/mcp_client.py`. **Created:** `tests/unit/test_v2_mcp_tools.py`.
+
+---
+
+### Task 27 — Cross-repository fix corpus and per-language weighting [v2]
+
+- Created `pr_reviewer/kb/cross_repo.py` (135 lines):
+  - `_CODE_PATTERNS` — 4 compiled regex patterns detecting Python keywords, JS/TS constructs, braces/semicolons, and generics/HTML tags.
+  - `_count_code_lines(content)` — counts lines matching any code pattern.
+  - `CrossRepoLearning(chromadb_client, config, secret_scrubber)`:
+    - `add_cross_repo_fix(signal, content, finding_category, language, vulnerability_type, installation_id)` — (1) scrubs secrets via `SecretScrubber.scrub`, (2) validates code concreteness (>3 code-like lines → `ValueError`), (3) embeds and stores in `cross_repo_fixes` ChromaDB collection with metadata: `language`, `category`, `vulnerability_type`, `installation_id`, `repo_id`, `version`.
+    - `_prune_old_versions(collection, max_versions=5)` — sets `is_active=False` on entries outside the newest 5 versions; entries are deactivated, never deleted.
+    - `rollback(corpus, target_version)` — deactivates all entries with `version > target_version`.
+- Extended `pr_reviewer/workers/feedback_processor.py` — after `FeedbackStore.insert`, calls `CrossRepoLearning.add_cross_repo_fix` when `signal.signal_type == positive` AND `config.cross_repo_sharing == True` (opt-in; default `False`).
+- Added `cross_repo_sharing: bool = False` to `pr_reviewer/config/schema.py`.
+
+**Tests:** 9 unit tests — all green.
+
+**Files created:** `pr_reviewer/kb/cross_repo.py`, `tests/unit/test_cross_repo.py`. **Modified:** `pr_reviewer/workers/feedback_processor.py`, `pr_reviewer/config/schema.py`.
+
+---
+
+### Task 28 — v2 eval harness: knowledge retrieval quality [v2]
+
+- Created `eval/retrieval_quality.py`:
+  - `score_retrieval_calls(trace, findings, judge_fn=None)` — filters `query_knowledge_base` entries from a tool call trace; calls `relevance_judge` per call; returns mean score per corpus name as `dict[str, float]`.
+  - `emit_retrieval_relevance_metric(scores, record_fn=None)` — records `kb.retrieval_relevance` OTel gauge per corpus; injectable `record_fn` for testing.
+- Created `eval/budget_attribution.py`:
+  - `_KB_TOOLS` frozenset — `query_knowledge_base`, `lookup_cve`, `check_package_advisory`, `ghsa_lookup`, `snyk_lookup`, `owasp_check`.
+  - `_CODEBASE_TOOLS` frozenset — `fetch_file_content`, `search_file`, `list_directory`, `get_symbol_usages`.
+  - `BudgetAttribution(frozen=True)` — `kb_calls`, `codebase_calls`, `total`.
+  - `attribute_budget(tool_calls)` — partitions call list into KB vs codebase categories; `kb_calls + codebase_calls` may be less than `total` for tools in neither set.
+- Created `eval/corpus_health.py`:
+  - `CorpusHealthMonitor(threshold=0.6, window=3, on_flag=None)` — stateful rolling-window monitor; `record_run(corpus, mean_relevance)` appends to history, keeps last `window` entries; returns `True` and calls `on_flag` when all entries in the window fall below `threshold`; history is immutable (list is never mutated in-place).
+- Created `eval/tasks/ablation.py`:
+  - `compute_ablation_delta(run_with_kb, run_without_kb)` — computes per-category `delta_precision` and `delta_recall` from two run result dicts.
+  - `run_ablation(corpus, eval_runner_fn)` — calls `eval_runner_fn` twice with `kb_enabled=True/False`; returns delta report.
+- Created `eval/tasks/index_contribution.py`:
+  - `IndexContributionReport(frozen=True)` — `precision_delta`, `recall_delta`, `fp_delta` per category.
+  - `compute_index_contribution(run_with_index, run_without_index)` — three-delta report.
+  - `run_index_contribution(corpus, eval_runner_fn)` — ablation toggling `codebase_index_enabled`.
+- Added Alembic migration `009_eval_corpus_health.py` — `eval_corpus_health` table for persisting monitor state.
+- **Migration chain fix:** resolved duplicate revision IDs introduced by parallel agent dispatch — renumbered all post-003 migrations to a clean linear chain: 004 (eval_runs) → 005 (kb_entries) → 006 (corpus_versions) → 007 (vibe_scores) → 008 (codebase_indexes) → 009 (eval_corpus_health); updated two test files that checked old filenames.
+
+**Tests:** 10 unit tests — all green.
+
+**Files created:** `eval/retrieval_quality.py`, `eval/budget_attribution.py`, `eval/corpus_health.py`, `eval/tasks/ablation.py`, `eval/tasks/index_contribution.py`, `alembic/versions/009_eval_corpus_health.py`, `tests/unit/test_eval_harness_v2.py`. **Modified:** tests for codebase_index and eval_report to reflect new migration filenames.
+
+---
+
+**Running totals:** 251 unit tests · 6 integration tests (require live Postgres) · 3 pre-existing OTel isolation failures · lint clean · all 28 tasks complete

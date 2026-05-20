@@ -13,6 +13,7 @@ from slowapi import Limiter
 
 from pr_reviewer.logging import get_logger
 from pr_reviewer.telemetry import METRIC_QUEUE_DEPTH
+from pr_reviewer.workers.indexer import run_index_refresh
 from pr_reviewer.workers.tasks import process_feedback_job, process_review_job
 
 router = APIRouter()
@@ -29,6 +30,15 @@ def _get_client_ip(request: Request) -> str:
 
 
 limiter = Limiter(key_func=_get_client_ip, storage_uri="memory://")
+
+
+def _count_push_files(payload: dict) -> int:
+    total = 0
+    for commit in payload.get("commits", []):
+        total += len(commit.get("added", []))
+        total += len(commit.get("modified", []))
+        total += len(commit.get("removed", []))
+    return total
 
 
 def _verify_signature(body: bytes, header: str, secret: str) -> None:
@@ -72,6 +82,21 @@ async def github_webhook(
             kwargs={"payload": payload, "event": x_github_event}, queue="feedback_jobs"
         )
         _queue_depth.add(1, {"queue": "feedback_jobs"})
+
+    elif x_github_event == "push":
+        payload = json.loads(body)
+        ref = payload.get("ref", "")
+        default_branch = payload.get("repository", {}).get("default_branch", "main")
+        if ref == f"refs/heads/{default_branch}":
+            changed_files = _count_push_files(payload)
+            if changed_files > 20:
+                installation_id = payload.get("installation", {}).get("id", 0)
+                repo_id = payload.get("repository", {}).get("full_name", "")
+                run_index_refresh.apply_async(
+                    kwargs={"repo_id": repo_id, "installation_id": installation_id},
+                    queue="indexer_jobs",
+                )
+        return JSONResponse(content={"status": "accepted"}, status_code=200)
 
     else:
         return JSONResponse(content={"status": "ignored"}, status_code=200)

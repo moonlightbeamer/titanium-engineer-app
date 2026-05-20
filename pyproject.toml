@@ -36,6 +36,7 @@ dependencies = [
     "opentelemetry-instrumentation-fastapi>=0.45b0",
     "opentelemetry-instrumentation-celery>=0.45b0",
     "opentelemetry-instrumentation-sqlalchemy>=0.45b0",
+    "litellm>=1.85.0",
 ]
 
 [project.optional-dependencies]

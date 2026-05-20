@@ -33,3 +33,4 @@ class Config(BaseModel):
     knowledge_base: KnowledgeBaseConfig = Field(default_factory=KnowledgeBaseConfig)
     codebase_index_enabled: bool = False
     index_max_tokens: int = 8000
+    cross_repo_sharing: bool = False
