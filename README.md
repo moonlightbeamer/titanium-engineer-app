@@ -48,7 +48,7 @@ The bot authenticates via a GitHub App. Create one at:
 | Webhook URL | leave blank for now — you'll fill this in after `./launch` |
 | Webhook secret | generate a random string, e.g. `openssl rand -hex 32` |
 | Repository permissions | Contents: Read · Pull requests: Read & write |
-| Subscribe to events | `Pull request` · `Pull request review` · `Pull request review comment` |
+| Subscribe to events | `Pull request` · `Pull request review` · `Pull request review comment` · `Push` |
 
 After creating the app:
 1. Note your **App ID** (shown at the top of the app settings page)
@@ -163,7 +163,10 @@ min_severity: low           # suppress findings below this level (low | medium |
 auto_approve_on_no_findings: false
 tool_budget: 20             # max LLM tool calls per review job
 review_draft_prs: false     # set true to review draft PRs
-codebase_index_enabled: false  # v2 feature — persistent codebase memory
+codebase_index_enabled: false  # persistent codebase memory (v2)
+index_max_tokens: 8000      # token budget for injected codebase context
+cross_repo_sharing: false   # contribute positive findings to cross-repo corpus (v2)
+max_linter_files: 5         # max files passed to linter per review
 
 ignore_patterns_extend:     # add to default ignore list
   - "vendor/**"
@@ -250,9 +253,10 @@ inspect view
 - Precision, recall, and false positive count per category (bugs, security, style, performance)
 - Per-finding scores as a vector: relevance · accuracy · actionability · clarity
 - Average cost and latency per review
-- Tool_Budget consumption distribution
+- Tool budget consumption distribution (`kb_calls` vs `codebase_calls`)
 - Delta vs the previous run
-- Knowledge base retrieval quality (flags security findings with no KB retrieval)
+- Knowledge base retrieval quality — mean relevance score per corpus; corpora sustaining <0.6 mean relevance for 3 consecutive runs are flagged automatically
+- Index contribution delta — precision/recall shift with `CodebaseIndex` on vs off
 
 **Meta-prompting loop** — when quality is low, run the improvement loop to get a revised system prompt:
 
@@ -265,18 +269,25 @@ This identifies the 5 lowest-scoring reviews, submits them to a reflector LLM, p
 ### Knowledge base management
 
 ```bash
-# Add a human-authored lessons-learned entry
-kb add --corpus lessons_learned \
-  --problem "..." \
-  --pattern "..." \
-  --root-cause "..." \
-  --resolution "..."
+# Seed the KB with minimal starter data
+kb bootstrap
+
+# Add a human-authored lessons-learned entry (draft — requires approval)
+kb add --corpus lessons_learned --draft \
+  '{"problem_description": "...", "resolution": "...", "category": "security"}'
+
+# Review and approve the draft
+kb list --status draft
+kb approve <entry-id>
+
+# Deprecate an outdated entry (row kept, excluded from queries)
+kb deprecate <entry-id>
 
 # Roll back a corpus to a previous version
 kb rollback --corpus cve_snapshot --version 3
 
-# List active corpus versions
-kb list-versions
+# Re-embed all active entries after an embedding model upgrade
+kb reembed --corpus all
 ```
 
 ---
@@ -322,9 +333,9 @@ The service is a single FastAPI application with Celery workers. See [`.kiro/spe
 
 **Stack:** Python 3.12 · FastAPI · Celery · Redis · PostgreSQL · ChromaDB · LangChain · Azure OpenAI GPT-4o · Azure AI Foundry (Claude, eval judge) · OpenTelemetry
 
-**v1** delivers the complete review pipeline with knowledge base, feedback loop, and evaluation harness.
+**v1** delivers the complete review pipeline: webhook receiver, LangChain ReviewAgent, RAG knowledge base, feedback loop, and evaluation harness.
 
-**v2** (deferred until v1 feedback data accumulates) adds persistent codebase memory (`CodebaseIndex`), expanded MCP server ecosystem (Snyk, OWASP, linter integration, license checker), and cross-repository learning.
+**v2** adds persistent codebase memory (`CodebaseIndex` built nightly by the `Indexer`), expanded MCP ecosystem (GHSA, Snyk, OWASP, linter, license checker), and cross-repository learning (opt-in via `cross_repo_sharing`). Both layers are fully implemented and gated by config flags — v2 features are off by default until codebase indexes have been populated.
 
 ---
 
@@ -358,15 +369,18 @@ make lint
 
 ```
 pr_reviewer/
-├── api/          # FastAPI routes (webhook receiver, health)
-├── workers/      # Celery tasks (job processor, feedback processor)
-├── agents/       # ReviewAgent, ToolBudgetMiddleware
+├── api/          # FastAPI routes (webhook receiver, health check)
+├── workers/      # Celery tasks (job processor, feedback processor, indexer)
+├── agents/       # ReviewAgent, ToolBudgetMiddleware, linter/license tools
 ├── components/   # DiffParser, SecretScrubber, CommentPoster
-├── config/       # ConfigLoader
-├── kb/           # KnowledgeBase, MCPClient
+├── config/       # ConfigLoader, Config schema
+├── kb/           # KnowledgeBase, MCPClient, CLI, cross-repo corpus
 ├── store/        # GitHubAPIClient, FeedbackStore
-└── models/       # Frozen dataclasses, enums
+└── models/       # Frozen dataclasses, enums (Job, Finding, CodebaseIndex, …)
 eval/             # Evaluation harness (Inspect AI tasks, LiteLLM judges)
+├── judges/       # 6 judge files (relevance, accuracy, actionability, clarity, …)
+├── tasks/        # pre_ship, weekly_vibe, meta_prompt, ablation, index_contribution
+└── …             # corpus loader, retrieval quality, budget attribution, corpus health
 tests/
 ├── unit/
 ├── integration/
