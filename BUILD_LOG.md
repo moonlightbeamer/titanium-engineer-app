@@ -664,3 +664,47 @@ The Celery task body was a `raise NotImplementedError` stub left from the initia
 ---
 
 **Running totals:** 272 unit tests · 6 integration tests (require live Postgres) · 3 pre-existing OTel isolation failures · lint clean · all 30 tasks complete
+
+---
+
+### Bug fixes — macOS Celery worker crashes (first live end-to-end run)
+
+Four successive crashes surfaced during live testing after task 30 wiring. All are macOS-specific; Linux production is unaffected.
+
+**Fix 1 — `worker_concurrency` dict caused `TypeError` at worker startup**
+- `celery_app.conf.update` had `worker_concurrency` set to a per-queue dict `{"review_jobs": 10, ...}`. Celery expects an `int`; multiplying a dict by an int raises `TypeError: unsupported operand type(s) for *: 'dict' and 'int'`.
+- This was previously masked by the SIGSEGV crash (workers never reached this code path).
+- Fixed by setting `worker_concurrency=REVIEW_JOBS_CONCURRENCY` (int). Per-queue concurrency is handled by `--concurrency` on each worker process.
+- **File modified:** `pr_reviewer/workers/celery_app.py`.
+
+**Fix 2 — SIGABRT on macOS (`OBJC_DISABLE_INITIALIZE_FORK_SAFETY`)**
+- macOS Objective-C runtime aborts forked processes when `NSCharacterSet` initialisation is in progress on another thread at fork time — triggered by `httpx` being imported in the parent Celery process.
+- Added `OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES` to all Celery worker start commands in `launch`.
+- This was later superseded by Fix 3 (no fork = no crash), but was a necessary intermediate step.
+- **File modified:** `launch`.
+
+**Fix 3 — SIGSEGV on macOS (multiple non-fork-safe native libraries)**
+- `OBJC_DISABLE_INITIALIZE_FORK_SAFETY` suppressed the SIGABRT but a SIGSEGV remained. `hnswlib` (loaded by `chromadb`), `sqlalchemy`, and `httpx` all load native code in the parent process; forked children inherit corrupted state. Deferring the `chromadb` import alone was insufficient because other libraries have the same issue.
+- Root fix: switch Celery workers to `--pool=solo` in the `launch` script. This eliminates `fork()` entirely — tasks run in the main worker process. Acceptable for local dev (sequential task execution); Linux production uses the default prefork pool unaffected.
+- Also removed `OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES` (no longer needed without forking).
+- **File modified:** `launch`.
+
+**Fix 4 — Deferred `chromadb` import in `WorkerContainer`**
+- As a defence-in-depth measure (and correct regardless of pool type), moved `import chromadb` from module level inside `WorkerContainer.__init__`. This ensures `hnswlib` is only loaded post-fork in the child process, not pre-fork in the parent.
+- **File modified:** `pr_reviewer/workers/container.py`.
+
+---
+
+### Feature — Switch primary LLM to Azure AI Foundry Claude
+
+Azure OpenAI resource had both a VNet restriction (403) and a missing deployment (404). Switched the `ReviewAgent` LLM to Azure AI Foundry Claude via `litellm` (already a project dependency).
+
+- `pr_reviewer/agents/llm.py`:
+  - Added `_AzureAnthropicLLM` — calls `litellm.completion` with `model="azure_ai/{AZURE_ANTHROPIC_MODEL}"`, `api_base="{AZURE_ANTHROPIC_ENDPOINT}/models"`, `api_key=AZURE_ANTHROPIC_API_KEY`.
+  - `make_llm()` priority order: Azure AI Foundry Claude → Azure OpenAI → `_NoopLLM` stub.
+  - `AZURE_ANTHROPIC_MODEL` defaults to `claude-3-5-sonnet-20241022` if not set.
+- `pr_reviewer/agents/review_agent.py`:
+  - Added `except Exception` catch around the LLM call (Step 3). Previously only `TimeoutError` was caught; any other LLM error (403, 404, network) propagated up and crashed the Celery task. Now logs the error and continues with partial findings.
+- `.env.example`: added `AZURE_ANTHROPIC_MODEL` field with default value and comment.
+
+**Files modified:** `pr_reviewer/agents/llm.py`, `pr_reviewer/agents/review_agent.py`, `.env.example`.
