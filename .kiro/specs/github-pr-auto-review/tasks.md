@@ -187,14 +187,14 @@ Implement an LLM-backed GitHub PR review service in phases: v1 delivers the comp
   - [x] 13.12 Implement `pr_reviewer/components/comment_poster.py` — `CommentPoster(github_client)`; `post(findings, pr, config) -> None`; `_format_suggestion_block`; `_determine_review_status` (ignores escalations from severity determination); applies `min_severity` filter; deduplicates; handles 422 gracefully
   _Requirements: 4.1, 4.2, 4.3, 4.4, 4.6, 5.1, 5.3, 5.4, 5.5, 5.6, 5.7, 5.8, 5.9, 5.10, 7.4_
 
-- [ ] 14. FeedbackStore
-  - [ ] 14.1 Test: `test_insert_then_query_returns_inserted_signal` — insert signal, query by `repo_id` → signal present
-  - [ ] 14.2 Test: `test_query_recent_respects_limit` — 10 signals, `limit=5` → exactly 5 returned
-  - [ ] 14.3 Test: `test_query_recent_returns_most_recent_first` — 3 signals at t1 < t2 < t3 → t3 first
-  - [ ] 14.4 Test: `test_query_filters_by_file_path_pattern` — signals with patterns `["src/auth/**", "src/db/**"]`; only `src/auth/**` matches → only auth signals returned
-  - [ ] 14.5 Test: `test_feedback_signal_has_no_code_fields` — `FeedbackSignal` dataclass has no `code`, `diff`, `content`, or `snippet` field (Property 7)
-  - [ ] 14.6 Test: `test_query_uses_parameterized_sql` — SQL contains `$1` or `:param` placeholders, not f-strings
-  - [ ] 14.7 Implement `pr_reviewer/store/feedback_store.py` — `FeedbackStore(db_engine: Engine)` with `insert(signal) -> None` and `query_recent(repo_id, file_path_patterns, limit=5) -> list[FeedbackSignal]`; SQLAlchemy Core only; no raw f-string SQL
+- [x] 14. FeedbackStore
+  - [x] 14.1 Test: `test_insert_then_query_returns_inserted_signal` — insert signal, query by `repo_id` → signal present
+  - [x] 14.2 Test: `test_query_recent_respects_limit` — 10 signals, `limit=5` → exactly 5 returned
+  - [x] 14.3 Test: `test_query_recent_returns_most_recent_first` — 3 signals at t1 < t2 < t3 → t3 first
+  - [x] 14.4 Test: `test_query_filters_by_file_path_pattern` — signals with patterns `["src/auth/**", "src/db/**"]`; only `src/auth/**` matches → only auth signals returned
+  - [x] 14.5 Test: `test_feedback_signal_has_no_code_fields` — `FeedbackSignal` dataclass has no `code`, `diff`, `content`, or `snippet` field (Property 7)
+  - [x] 14.6 Test: `test_query_uses_parameterized_sql` — SQL contains `$1` or `:param` placeholders, not f-strings
+  - [x] 14.7 Implement `pr_reviewer/store/feedback_store.py` — `FeedbackStore(db_engine: Engine)` with `insert(signal) -> None` and `query_recent(repo_id, file_path_patterns, limit=5) -> list[FeedbackSignal]`; SQLAlchemy Core only; no raw f-string SQL
   _Requirements: 9.1, 9.5, 9.6, 9.7_
 
 - [ ] 15. FeedbackProcessor
