@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
@@ -38,6 +39,28 @@ class ReviewContext:
 @dataclass(frozen=True)
 class _Message:
     content: str
+    role: str = "user"
+
+
+_SYSTEM_PROMPT = """\
+You are a senior security and code quality reviewer. Analyze the provided git diff and identify real issues.
+
+Output ONLY a JSON array of findings. Each finding must be an object with these fields:
+- "file_path": string — filename from the diff header (e.g. "src/auth.py")
+- "line_number": integer — line number in the new file where the issue appears
+- "category": one of "bugs", "security", "style", "performance"
+- "severity": one of "low", "medium", "high"
+- "confidence": one of "low", "medium", "high"
+- "explanation": string — clear, specific description of the issue
+- "suggestion": string — concrete fix recommendation (optional, omit if not useful)
+
+Rules:
+- Only report issues in added or modified lines (lines starting with +)
+- Do not report issues in removed lines (starting with -)
+- Do not hallucinate issues that are not in the diff
+- If no real issues exist, output: []
+- Output raw JSON only — no markdown, no code fences, no explanation outside the JSON array\
+"""
 
 
 class ReviewAgent:
@@ -69,11 +92,16 @@ class ReviewAgent:
                 language="",
                 priming=True,
             )
-        except Exception:
-            _logger.warning("KB priming failed; continuing")
+        except Exception as exc:
+            _logger.warning("KB priming failed; continuing: %s", exc)
 
         # Step 3: LLM reasoning — single pass, one retry on timeout
-        messages = [_Message(content=_render_diff(diff))]
+        rendered = _render_diff(diff)
+        _logger.info("Sending diff to LLM (%d chars, %d files): %.300s", len(rendered), len(diff.changed_files), rendered)
+        messages = [
+            _Message(role="system", content=_SYSTEM_PROMPT),
+            _Message(content=rendered),
+        ]
         try:
             response = self._llm.invoke(messages)
             findings_store.extend(_parse_findings(response, ctx.job_id))
@@ -120,8 +148,53 @@ def _render_diff(diff: StructuredDiff) -> str:
 
 
 def _parse_findings(response: Any, job_id: UUID) -> list[Finding]:
-    """Parse LLM response into Findings; returns empty list on non-structured response."""
-    return []
+    """Parse LLM JSON response into Findings; returns empty list on any parse failure."""
+    try:
+        raw = response.choices[0].message.content or ""
+    except (AttributeError, IndexError):
+        _logger.warning("LLM response has unexpected shape; skipping parse")
+        return []
+
+    # Strip accidental markdown fences
+    text = raw.strip()
+    if text.startswith("```"):
+        text = "\n".join(text.splitlines()[1:])
+        text = text.rsplit("```", 1)[0].strip()
+
+    _logger.info("LLM raw response: %.500s", text)
+
+    try:
+        items = json.loads(text)
+    except json.JSONDecodeError as exc:
+        _logger.warning("LLM response is not valid JSON: %s — raw: %.200s", exc, text)
+        return []
+
+    if not isinstance(items, list):
+        _logger.warning("LLM response is not a JSON array; skipping")
+        return []
+
+    findings: list[Finding] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        try:
+            findings.append(Finding(
+                id=uuid4(),
+                job_id=job_id,
+                file_path=str(item.get("file_path", "")),
+                line_number=int(item.get("line_number", 1)),
+                category=ReviewCategory(item.get("category", "bugs")),
+                severity=Severity(item.get("severity", "medium")),
+                confidence=Confidence(item.get("confidence", "medium")),
+                explanation=str(item.get("explanation", "")),
+                is_escalation=False,
+                suggestion=str(item["suggestion"]) if item.get("suggestion") else None,
+            ))
+        except (ValueError, KeyError) as exc:
+            _logger.warning("Skipping malformed finding %s: %s", item, exc)
+
+    _logger.info("Parsed %d finding(s) from LLM response", len(findings))
+    return findings
 
 
 def _resolve_low_confidence(

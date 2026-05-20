@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import uuid
 from datetime import UTC, datetime
@@ -10,7 +11,10 @@ from typing import Any
 
 import click
 import sqlalchemy as sa
+from dotenv import load_dotenv
 from sqlalchemy import MetaData, Table, Column, text
+
+load_dotenv()
 
 from pr_reviewer.logging import get_logger
 
@@ -386,8 +390,22 @@ def cmd_bootstrap(obj: dict) -> None:
     inserted = 0
 
     all_seeds = _BOOTSTRAP_CVE_ENTRIES + _BOOTSTRAP_GUIDELINE_ENTRIES
+    # Track next version per corpus so each entry gets a unique version number
+    corpus_versions: dict[str, int] = {}
     with engine.connect() as conn:
+        # Start each corpus version counter above any existing entries
         for seed in all_seeds:
+            corpus = seed["corpus"]
+            if corpus not in corpus_versions:
+                row = conn.execute(
+                    text("SELECT COALESCE(MAX(version), 0) FROM knowledge_base_entries WHERE corpus=:corpus"),
+                    {"corpus": corpus},
+                ).scalar()
+                corpus_versions[corpus] = (row or 0) + 1
+        for seed in all_seeds:
+            corpus = seed["corpus"]
+            version = corpus_versions[corpus]
+            corpus_versions[corpus] += 1
             conn.execute(
                 text(
                     "INSERT INTO knowledge_base_entries "
@@ -398,20 +416,101 @@ def cmd_bootstrap(obj: dict) -> None:
                 ),
                 {
                     "id": str(uuid.uuid4()),
-                    "corpus": seed["corpus"],
+                    "corpus": corpus,
                     "category": seed["category"],
                     "content": seed["content"],
                     "problem_description": seed["problem_description"],
                     "resolution": seed["resolution"],
                     "code_pattern": None,
                     "language": seed.get("language"),
-                    "model_version": "text-embedding-3-small",
+                    "model_version": os.getenv("AZURE_OPENAI_EMBEDDING_DEPLOYMENT", "text-embedding-3-large"),
                     "is_draft": False,
                     "is_active": True,
-                    "version": 1,
+                    "version": version,
                     "created_at": now,
                 },
             )
             inserted += 1
         conn.commit()
     click.echo(f"Bootstrapped {inserted} entries")
+
+
+@kb.command("sync")
+@click.option(
+    "--chroma-url",
+    envvar="CHROMADB_URL",
+    default="http://localhost:8001",
+    help="ChromaDB HTTP URL",
+)
+@click.option(
+    "--embedding-deployment",
+    envvar="AZURE_OPENAI_EMBEDDING_DEPLOYMENT",
+    required=True,
+    help="Azure OpenAI embedding deployment name (AZURE_OPENAI_EMBEDDING_DEPLOYMENT)",
+)
+@click.pass_obj
+def cmd_sync(obj: dict, chroma_url: str, embedding_deployment: str) -> None:
+    """Push active PostgreSQL KB entries into ChromaDB using Azure OpenAI embeddings."""
+    import os
+    import urllib.parse
+
+    import chromadb
+    import openai
+
+    engine = obj["engine"]
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text(
+                "SELECT id, corpus, category, content, language, model_version "
+                "FROM knowledge_base_entries WHERE is_active=true AND is_draft=false"
+            )
+        ).fetchall()
+
+    if not rows:
+        click.echo("No active entries found in PostgreSQL; nothing to sync.")
+        return
+
+    oai = openai.AzureOpenAI(
+        api_key=os.environ["AZURE_OPENAI_API_KEY"],
+        azure_endpoint=os.environ["AZURE_OPENAI_ENDPOINT"],
+        api_version=os.getenv("AZURE_OPENAI_API_VERSION", "2024-08-01-preview"),
+    )
+
+    parsed = urllib.parse.urlparse(chroma_url)
+    client = chromadb.HttpClient(host=parsed.hostname, port=parsed.port or 8001)
+
+    synced = 0
+    collections: dict[str, Any] = {}
+    for row in rows:
+        entry_id, corpus, category, content, language, model_version = row
+        if corpus not in collections:
+            # Create collection without a default embedding function — we supply vectors
+            collections[corpus] = client.get_or_create_collection(
+                corpus, embedding_function=None
+            )
+        col = collections[corpus]
+
+        response = oai.embeddings.create(input=content, model=embedding_deployment)
+        vector = response.data[0].embedding
+
+        meta: dict[str, Any] = {
+            "category": category or "",
+            "model_version": model_version or embedding_deployment,
+        }
+        if language:
+            meta["language"] = language
+
+        col.upsert(
+            ids=[str(entry_id)],
+            embeddings=[vector],
+            documents=[content],
+            metadatas=[meta],
+        )
+        synced += 1
+        click.echo(f"  embedded {corpus}/{str(entry_id)[:8]}…")
+
+    click.echo(f"Synced {synced} entries to ChromaDB across {len(collections)} collection(s).")
+
+
+if __name__ == "__main__":
+    kb()

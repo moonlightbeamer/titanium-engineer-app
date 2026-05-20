@@ -43,7 +43,7 @@ def process_review_job(payload: dict) -> None:
     max_retries=3,
 )
 def process_feedback_job(payload: dict, event: str) -> None:
-    raise NotImplementedError  # TODO task 16
+    _logger.warning("process_feedback_job not yet implemented (task 16); dropping event=%s", event)
 
 
 @celery_app.task(

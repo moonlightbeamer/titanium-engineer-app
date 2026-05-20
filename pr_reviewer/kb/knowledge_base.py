@@ -59,12 +59,15 @@ class KnowledgeBase:
         chroma_client: Any,
         config: "Config",
         last_refresh_dates: dict[str, datetime] | None = None,
+        embedder: Any = None,
     ) -> None:
         self._client = chroma_client
         self._config = config
         self._last_refresh = last_refresh_dates or {}
+        self._embedder = embedder
         self._collections: dict[str, Any] = {
-            name: chroma_client.get_or_create_collection(name) for name in COLLECTIONS
+            name: chroma_client.get_or_create_collection(name, embedding_function=None)
+            for name in COLLECTIONS
         }
 
     def _corpus_enabled(self, corpus: str) -> bool:
@@ -145,11 +148,15 @@ class KnowledgeBase:
             if not self._corpus_enabled(corpus):
                 continue
 
-            result = col.query(
-                query_texts=[query],
-                n_results=TOP_K,
-                where={"category": category} if category else None,
-            )
+            query_kwargs: dict[str, Any] = {
+                "n_results": TOP_K,
+                "where": {"category": category} if category else None,
+            }
+            if self._embedder is not None:
+                query_kwargs["query_embeddings"] = [self._embedder.embed(query)]
+            else:
+                query_kwargs["query_texts"] = [query]
+            result = col.query(**query_kwargs)
 
             ids = result["ids"][0] if result["ids"] else []
             docs = result["documents"][0] if result["documents"] else []

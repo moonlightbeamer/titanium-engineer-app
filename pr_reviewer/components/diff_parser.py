@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 
 _logger = get_logger(__name__)
 
-_MAX_CHANGED_LINES = 3000
+_MAX_CHANGED_LINES = 10000
 
 DEFAULT_IGNORE_PATTERNS: list[str] = [
     "*.lock",
@@ -168,6 +168,14 @@ class DiffParser:
 
             if truncated:
                 break
+
+        if truncated:
+            _logger.warning(
+                "Diff truncated at %d changed lines; included %d file(s): %s",
+                _MAX_CHANGED_LINES,
+                len(changed_files),
+                [cf.filename for cf in changed_files],
+            )
 
         return StructuredDiff(
             changed_files=tuple(changed_files),

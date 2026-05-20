@@ -73,21 +73,21 @@ class RateLimitedLogger:
             return True
         return False
 
-    def debug(self, msg: str, **kwargs: Any) -> None:
-        self._logger.debug(msg, **kwargs)
+    def debug(self, msg: str, *args: Any, **kwargs: Any) -> None:
+        self._logger.debug(msg, *args, **kwargs)
 
-    def info(self, msg: str, **kwargs: Any) -> None:
-        self._logger.info(msg, **kwargs)
+    def info(self, msg: str, *args: Any, **kwargs: Any) -> None:
+        self._logger.info(msg, *args, **kwargs)
 
-    def warning(self, msg: str, **kwargs: Any) -> None:
-        self._logger.warning(msg, **kwargs)
+    def warning(self, msg: str, *args: Any, **kwargs: Any) -> None:
+        self._logger.warning(msg, *args, **kwargs)
 
-    def error(self, msg: str, **kwargs: Any) -> None:
+    def error(self, msg: str, *args: Any, **kwargs: Any) -> None:
         if self._should_emit(msg):
-            self._logger.error(msg, **kwargs)
+            self._logger.error(msg, *args, **kwargs)
 
-    def critical(self, msg: str, **kwargs: Any) -> None:
-        self._logger.critical(msg, **kwargs)
+    def critical(self, msg: str, *args: Any, **kwargs: Any) -> None:
+        self._logger.critical(msg, *args, **kwargs)
 
 
 _loggers: dict[str, RateLimitedLogger] = {}

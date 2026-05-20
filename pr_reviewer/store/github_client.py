@@ -44,7 +44,7 @@ class GitHubAPIClient:
         self._redis = redis_client
         self._app_id = app_id
         self._private_key = private_key
-        self._http = http_client or httpx.Client(base_url=self.BASE_URL)
+        self._http = http_client or httpx.Client(base_url=self.BASE_URL, timeout=30.0)
 
     # ── Auth ──────────────────────────────────────────────────────────────────
 
@@ -228,14 +228,17 @@ class GitHubAPIClient:
         )
         return response.json()  # type: ignore[return-value]
 
-    def compare_commits(self, repo: str, base: str, head: str) -> dict:
+    def compare_commits(self, repo: str, base: str, head: str) -> str:
         token = self.get_access_token()
         response = self._request(
             "GET",
             f"/repos/{repo}/compare/{base}...{head}",
-            headers={"Authorization": f"token {token}"},
+            headers={
+                "Authorization": f"token {token}",
+                "Accept": "application/vnd.github.v3.diff",
+            },
         )
-        return response.json()  # type: ignore[return-value]
+        return response.text
 
     def get_branch_head_sha(self, repo: str, branch: str) -> str:
         token = self.get_access_token()

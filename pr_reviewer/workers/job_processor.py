@@ -84,6 +84,9 @@ class JobProcessor:
 
         # Parse diff
         diff = self._diff_parser.parse(raw_diff, config)
+        if diff.truncated:
+            _logger.warning("Diff truncated — %s; %d file(s) skipped",
+                diff.truncation_notice, len(diff.skipped_files))
 
         # Fetch few-shot feedback signals
         signals = self._feedback_store.query_recent(

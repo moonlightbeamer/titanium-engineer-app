@@ -52,7 +52,10 @@ class _AzureOpenAILLM:
         _logger.info(f"LLM: Azure OpenAI ({self._deployment})")
 
     def invoke(self, messages: list) -> Any:
-        oai_messages = [{"role": "user", "content": m.content} for m in messages]
+        oai_messages = [
+            {"role": getattr(m, "role", "user"), "content": m.content}
+            for m in messages
+        ]
         return self._client.chat.completions.create(
             model=self._deployment,
             messages=oai_messages,

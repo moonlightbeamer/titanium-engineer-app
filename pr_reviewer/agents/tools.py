@@ -62,11 +62,10 @@ def create_tools(
     ) -> Any:
         budget.track("query_knowledge_base", priming=priming)
         return ctx.knowledge_base.query(
-            text=text,
+            query=text,
             category=category,
             language=language,
             priming=priming,
-            **kwargs,
         )
 
     def fetch_file_content(path: str, ref: str = "HEAD", **kwargs: Any) -> str:

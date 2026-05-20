@@ -188,6 +188,13 @@ until curl -sf "http://localhost:${CHROMADB_PORT}/api/v2/heartbeat" >/dev/null 2
 done
 ok "ChromaDB ready (port ${CHROMADB_PORT})"
 
+info "Syncing knowledge base to ChromaDB…"
+if (cd "$SCRIPT_DIR" && .venv/bin/python -m pr_reviewer.kb.cli sync 2>/dev/null); then
+  ok "Knowledge base synced"
+else
+  warn "KB sync skipped (no entries or missing credentials — run '.venv/bin/python -m pr_reviewer.kb.cli sync' manually)"
+fi
+
 [[ "$SERVICES_ONLY" == "true" ]] && { ok "Services running. Exiting (--services-only)."; exit 0; }
 
 # ── Step 7: Python dependencies ───────────────────────────────────────────────

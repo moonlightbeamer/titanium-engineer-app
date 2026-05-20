@@ -26,6 +26,29 @@ from pr_reviewer.workers.job_processor import JobProcessor
 _logger = get_logger(__name__)
 
 
+class _AzureEmbedder:
+    """Thin wrapper around Azure OpenAI embeddings for ChromaDB query-time use."""
+
+    def __init__(self) -> None:
+        import openai
+        self._client = openai.AzureOpenAI(
+            api_key=os.environ["AZURE_OPENAI_API_KEY"],
+            azure_endpoint=os.environ["AZURE_OPENAI_ENDPOINT"],
+            api_version=os.getenv("AZURE_OPENAI_API_VERSION", "2024-08-01-preview"),
+        )
+        self._deployment = os.environ["AZURE_OPENAI_EMBEDDING_DEPLOYMENT"]
+
+    def embed(self, text: str) -> list[float]:
+        return self._client.embeddings.create(input=text, model=self._deployment).data[0].embedding
+
+
+def _make_embedder() -> _AzureEmbedder | None:
+    if os.getenv("AZURE_OPENAI_API_KEY") and os.getenv("AZURE_OPENAI_EMBEDDING_DEPLOYMENT"):
+        return _AzureEmbedder()
+    _logger.warning("AZURE_OPENAI_EMBEDDING_DEPLOYMENT not set; KB queries will use local embeddings")
+    return None
+
+
 class WorkerContainer:
     """Holds shared connections and creates per-installation processor instances."""
 
@@ -52,7 +75,8 @@ class WorkerContainer:
         )
 
         default_config = Config()
-        self._knowledge_base = KnowledgeBase(self._chroma, default_config)
+        embedder = _make_embedder()
+        self._knowledge_base = KnowledgeBase(self._chroma, default_config, embedder=embedder)
         self._mcp_client = MCPClient(self._knowledge_base, default_config, self._redis)
 
         self._review_agent = ReviewAgent(make_llm())
