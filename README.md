@@ -79,31 +79,31 @@ The API keys (`AZURE_OPENAI_API_KEY`, `AZURE_ANTHROPIC_API_KEY`) and backing ser
 That's it. The script handles everything automatically:
 
 1. **Kills any previous run** — cleans up stale processes from the last session so ports 8000 and 4040 are always free
-2. Installs ngrok if not present
+2. Installs cloudflared if not present
 3. Starts the Podman machine
 4. Starts PostgreSQL, Redis, ChromaDB, OTel Collector (with health checks)
 5. Installs Python dependencies
 6. Runs database migrations
 7. Starts FastAPI + Celery workers
-8. Opens an ngrok tunnel and prints your public webhook URL
+8. Opens a cloudflared tunnel and prints your public webhook URL
 
 Safe to run multiple times — each run stops the previous one cleanly before starting fresh.
 
 At the end you'll see:
 
 ```
-GitHub webhook URL : https://abc123.ngrok-free.app/webhook/github
+GitHub webhook URL : https://abc123.trycloudflare.com/webhook/github
 → Paste into: GitHub → Settings → Developer settings → GitHub Apps → Edit → Webhook URL
-→ This URL changes on every restart (free ngrok). Re-paste it after each ./launch.
+→ This URL changes on every restart. Re-paste it after each ./launch.
 ```
 
 ### Step 4 — Wire the webhook URL into GitHub
 
-1. Copy the `https://…ngrok-free.app/webhook/github` URL printed by `./launch`
+1. Copy the `https://….trycloudflare.com/webhook/github` URL printed by `./launch`
 2. Go to: **GitHub → Settings → Developer settings → GitHub Apps → Edit**
 3. Paste it into the **Webhook URL** field → **Save changes**
 
-> **Free ngrok gives you a new URL on every restart.** Re-paste it into your GitHub App after each `./launch`. To get a stable URL, add an authtoken from [dashboard.ngrok.com](https://dashboard.ngrok.com) — free accounts get one static domain.
+> **cloudflared gives you a new URL on every restart.** Re-paste it into your GitHub App after each `./launch`.
 
 ### Step 5 — Install the app on a repository
 
@@ -116,7 +116,7 @@ GitHub webhook URL : https://abc123.ngrok-free.app/webhook/github
 
 Open or update a PR in the installed repository. Within 10 minutes the bot posts its review inline on the Files Changed tab.
 
-To verify the webhook is firing: the ngrok dashboard at `http://localhost:4040` shows every request and response in real time.
+To verify the webhook is firing: check `logs/cloudflared.log` or watch `logs/api.log` for incoming requests.
 
 ---
 
@@ -351,11 +351,11 @@ The service is a single FastAPI application with Celery workers. See [`.kiro/spe
 # Skip migrations on fast restarts
 ./launch --no-migrate
 
-# Skip ngrok (if you have a stable public URL already)
+# Skip cloudflared (if you have a stable public URL already)
 ./launch --no-tunnel
 ```
 
-Each run automatically kills the previous session (app processes, ngrok) before starting fresh — no manual cleanup needed. Logs are written to `logs/` — `api.log`, `worker-review.log`, `worker-feedback.log`, `worker-indexer.log`, `beat.log`, `ngrok.log`.
+Each run automatically kills the previous session (app processes, cloudflared) before starting fresh — no manual cleanup needed. Logs are written to `logs/` — `api.log`, `worker-review.log`, `worker-feedback.log`, `worker-indexer.log`, `beat.log`, `cloudflared.log`.
 
 ```bash
 # Run tests

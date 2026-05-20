@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # Launch script for GitHub PR Auto-Review service.
 # Starts all backing services, runs migrations, starts the app, and opens an
-# ngrok tunnel so GitHub can deliver webhooks to localhost.
+# cloudflared tunnel so GitHub can deliver webhooks to localhost.
 #
 # Usage: ./launch [--services-only] [--no-migrate] [--no-tunnel]
 #   --services-only   Start backing services only (skip app + tunnel)
 #   --no-migrate      Skip alembic migration step
-#   --no-tunnel       Skip ngrok tunnel (if you have a public URL already)
+#   --no-tunnel       Skip cloudflared tunnel (if you have a public URL already)
 
 set -euo pipefail
 
@@ -97,20 +97,14 @@ ok "podman $(podman --version | awk '{print $3}')"
 ok "podman-compose $(podman-compose --version 2>/dev/null | awk '/version/{print $NF}' | head -1 || echo 'installed')"
 ok "uv $(uv --version | awk '{print $2}')"
 
-# ── Step 2: ngrok ─────────────────────────────────────────────────────────────
+# ── Step 2: cloudflared ───────────────────────────────────────────────────────
 if [[ "$NO_TUNNEL" == "false" && "$SERVICES_ONLY" == "false" ]]; then
-  header "ngrok"
-  if ! command -v ngrok >/dev/null 2>&1; then
-    info "ngrok not found — installing via Homebrew…"
-    brew install ngrok/ngrok/ngrok || fail "Failed to install ngrok. Install manually: https://ngrok.com/download"
+  header "cloudflared"
+  if ! command -v cloudflared >/dev/null 2>&1; then
+    info "cloudflared not found — installing via Homebrew…"
+    brew install cloudflared || fail "Failed to install cloudflared. Install manually: https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/"
   fi
-  ok "ngrok $(ngrok version | awk '{print $3}')"
-
-  # Warn if no auth token is configured — ngrok works but with short session limits
-  if ! ngrok config check >/dev/null 2>&1 || ! grep -q "authtoken" "$HOME/.config/ngrok/ngrok.yml" 2>/dev/null; then
-    warn "No ngrok authtoken found. Sessions will expire after 2 hours."
-    warn "Get a free token at https://dashboard.ngrok.com and run: ngrok config add-authtoken <token>"
-  fi
+  ok "cloudflared $(cloudflared --version 2>&1 | awk '{print $3}')"
 fi
 
 # ── Step 3: Podman machine ────────────────────────────────────────────────────
@@ -284,28 +278,25 @@ if curl -sf "http://localhost:8000/health" >/dev/null 2>&1; then
   ok "App healthy: $HEALTH"
 fi
 
-# ── Step 12: ngrok tunnel ─────────────────────────────────────────────────────
+# ── Step 12: cloudflared tunnel ───────────────────────────────────────────────
 PUBLIC_URL=""
 
 if [[ "$NO_TUNNEL" == "false" ]]; then
-  header "ngrok tunnel"
+  header "cloudflared tunnel"
 
-  info "Starting ngrok tunnel on port 8000…"
-  ngrok http 8000 --log "$LOG_DIR/ngrok.log" --log-format json &
-  NGROK_PID=$!
-  APP_PIDS+=($NGROK_PID)
-  echo $NGROK_PID >> "$PID_FILE"
+  info "Starting cloudflared tunnel on port 8000…"
+  cloudflared tunnel --url http://localhost:8000 2>&1 | tee "$LOG_DIR/cloudflared.log" &
+  CLOUDFLARED_PID=$!
+  APP_PIDS+=($CLOUDFLARED_PID)
+  echo $CLOUDFLARED_PID >> "$PID_FILE"
 
-  # Poll ngrok's local API until the public URL is available
-  RETRIES=20
-  until PUBLIC_URL=$(curl -sf http://localhost:4040/api/tunnels 2>/dev/null \
-      | grep -o '"public_url":"https://[^"]*"' \
-      | head -1 \
-      | cut -d'"' -f4); [[ -n "$PUBLIC_URL" ]]; do
+  # Poll log until the trycloudflare.com URL appears
+  RETRIES=30
+  until PUBLIC_URL=$(grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' "$LOG_DIR/cloudflared.log" 2>/dev/null | head -1); [[ -n "$PUBLIC_URL" ]]; do
     RETRIES=$((RETRIES - 1))
     if [[ $RETRIES -eq 0 ]]; then
-      warn "Could not retrieve ngrok public URL. Check $LOG_DIR/ngrok.log."
-      PUBLIC_URL="(ngrok URL unavailable — check $LOG_DIR/ngrok.log)"
+      warn "Could not retrieve cloudflared URL. Check $LOG_DIR/cloudflared.log."
+      PUBLIC_URL="(cloudflared URL unavailable — check $LOG_DIR/cloudflared.log)"
       break
     fi
     sleep 1
@@ -320,16 +311,13 @@ echo ""
 if [[ -n "$PUBLIC_URL" && "$PUBLIC_URL" != \(* ]]; then
   echo -e "  ${BOLD}GitHub webhook URL${NC} : ${CYAN}${PUBLIC_URL}/webhook/github${NC}"
   echo -e "  ${YELLOW}→ Paste into: GitHub → Settings → Developer settings → GitHub Apps → Edit → Webhook URL${NC}"
-  echo -e "  ${YELLOW}→ This URL changes on every restart (free ngrok). Re-paste it after each ./launch.${NC}"
+  echo -e "  ${YELLOW}→ This URL changes on every restart. Re-paste it after each ./launch.${NC}"
   echo ""
 fi
 echo -e "  Local webhook    : ${BLUE}http://localhost:8000/webhook/github${NC}"
 echo -e "  Health check     : ${BLUE}http://localhost:8000/health${NC}"
 echo -e "  ChromaDB         : ${BLUE}http://localhost:${CHROMADB_PORT}${NC}"
-if [[ "$NO_TUNNEL" == "false" ]]; then
-  echo -e "  ngrok dashboard  : ${BLUE}http://localhost:4040${NC}"
-fi
-echo -e "  Logs             : ${BLUE}$LOG_DIR/${NC}  (api · worker-review · worker-feedback · worker-indexer · beat · ngrok)"
+echo -e "  Logs             : ${BLUE}$LOG_DIR/${NC}  (api · worker-review · worker-feedback · worker-indexer · beat · cloudflared)"
 echo ""
 echo -e "  Press ${BOLD}Ctrl+C${NC} to stop everything."
 echo ""
