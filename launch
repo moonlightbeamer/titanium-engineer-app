@@ -231,28 +231,28 @@ echo $! >> "$PID_FILE"
 sleep 1
 
 info "Starting Celery worker — review_jobs (concurrency 10)…"
-(cd "$SCRIPT_DIR" && uv run celery -A pr_reviewer.workers worker \
+(cd "$SCRIPT_DIR" && OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES uv run celery -A pr_reviewer.workers worker \
   -Q review_jobs --concurrency 10 --loglevel info \
   2>&1 | tee "$LOG_DIR/worker-review.log") &
 APP_PIDS+=($!)
 echo $! >> "$PID_FILE"
 
 info "Starting Celery worker — feedback_jobs…"
-(cd "$SCRIPT_DIR" && uv run celery -A pr_reviewer.workers worker \
+(cd "$SCRIPT_DIR" && OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES uv run celery -A pr_reviewer.workers worker \
   -Q feedback_jobs --concurrency 4 --loglevel info \
   2>&1 | tee "$LOG_DIR/worker-feedback.log") &
 APP_PIDS+=($!)
 echo $! >> "$PID_FILE"
 
 info "Starting Celery worker — indexer_jobs (concurrency 2)…"
-(cd "$SCRIPT_DIR" && uv run celery -A pr_reviewer.workers worker \
+(cd "$SCRIPT_DIR" && OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES uv run celery -A pr_reviewer.workers worker \
   -Q indexer_jobs --concurrency 2 --loglevel info \
   2>&1 | tee "$LOG_DIR/worker-indexer.log") &
 APP_PIDS+=($!)
 echo $! >> "$PID_FILE"
 
 info "Starting Celery Beat (scheduled tasks: nightly index refresh at 02:00 UTC)…"
-(cd "$SCRIPT_DIR" && uv run celery -A pr_reviewer.workers beat \
+(cd "$SCRIPT_DIR" && OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES uv run celery -A pr_reviewer.workers beat \
   --loglevel info \
   2>&1 | tee "$LOG_DIR/beat.log") &
 APP_PIDS+=($!)
