@@ -56,18 +56,19 @@ After creating the app:
 
 ### Step 2 — Configure `.env`
 
-Copy `.env.example` to `.env` and fill in your values:
+A `.env` file is already provided in the repo with the structure ready to fill in. Open it and complete the four blank fields:
 
-```bash
-GITHUB_APP_ID=123456
-GITHUB_APP_PRIVATE_KEY="-----BEGIN RSA PRIVATE KEY-----\n..."   # contents of the .pem file, newlines as \n
-GITHUB_WEBHOOK_SECRET=your_webhook_secret                        # the secret you set in Step 1
-OPENAI_API_KEY=sk-...
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/pr_reviewer
-REDIS_URL=redis://localhost:6379/0
-CHROMADB_URL=http://localhost:8001
-LOG_LEVEL=INFO
-```
+| Variable | Where to find it |
+|---|---|
+| `GITHUB_APP_ID` | GitHub → Settings → Developer settings → GitHub Apps → your app (shown at top of page) |
+| `GITHUB_APP_PRIVATE_KEY` | Same page → *Private keys* → *Generate a private key* → open the downloaded `.pem` in a text editor, paste the full contents, replacing each newline with `\n` |
+| `GITHUB_WEBHOOK_SECRET` | The random string you generated when creating the GitHub App in Step 1 |
+| `AZURE_OPENAI_ENDPOINT` | Azure Portal → your Azure OpenAI resource → *Keys and Endpoint* |
+| `AZURE_ANTHROPIC_ENDPOINT` | [Azure AI Foundry](https://ai.azure.com) → your project → *Overview* |
+
+The API keys (`AZURE_OPENAI_API_KEY`, `AZURE_ANTHROPIC_API_KEY`) and backing service URLs (`DATABASE_URL`, `REDIS_URL`, `CHROMADB_URL`) are already populated. The deployment name defaults to `gpt-4o` — change it if your Azure deployment uses a different name.
+
+> The `.env` file is git-ignored and never committed. Do not share it or check it in.
 
 ### Step 3 — Launch
 
@@ -206,10 +207,11 @@ Everything the eval harness needs is installed automatically when you run `uv sy
 cd eval && uv sync
 ```
 
-One thing you do need to obtain separately: **a second LLM API key from a different provider**. The bias-detection judge must use a different model family than GPT-4o (e.g., Claude Sonnet) to avoid same-family scoring bias. Add it to your `.env`:
+One thing you do need to obtain separately: **a Claude endpoint via Azure AI Foundry**. The bias-detection judge must use a different model family than GPT-4o to avoid same-family scoring bias. Add it to your `.env`:
 
 ```bash
-ANTHROPIC_API_KEY=sk-ant-...   # used by the security bias-detection judge
+AZURE_ANTHROPIC_API_KEY=your_azure_anthropic_key
+AZURE_ANTHROPIC_ENDPOINT=https://your-resource.services.ai.azure.com
 ```
 
 The database must also be running — `./launch --services-only` is enough (no full app needed):
@@ -318,7 +320,7 @@ A developer using Claude Code gets a first-pass review during coding — catchin
 
 The service is a single FastAPI application with Celery workers. See [`.kiro/specs/github-pr-auto-review/design.md`](.kiro/specs/github-pr-auto-review/design.md) for the full architecture, data models, and sequence diagrams.
 
-**Stack:** Python 3.12 · FastAPI · Celery · Redis · PostgreSQL · ChromaDB · LangChain · OpenAI GPT-4o · OpenTelemetry
+**Stack:** Python 3.12 · FastAPI · Celery · Redis · PostgreSQL · ChromaDB · LangChain · Azure OpenAI GPT-4o · Azure AI Foundry (Claude, eval judge) · OpenTelemetry
 
 **v1** delivers the complete review pipeline with knowledge base, feedback loop, and evaluation harness.
 
