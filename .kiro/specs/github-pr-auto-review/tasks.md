@@ -407,6 +407,21 @@ Implement an LLM-backed GitHub PR review service in phases: v1 delivers the comp
   - [x] 29.14 Wire `index_refresh_schedule` in `run_index_refresh_task` — `"on_merge"` returns early; `"weekly"` checks last-refresh timestamp in Redis before proceeding
   _Requirements: 11.9, 12.4, 14.5_
 
+- [x] 30. Wire `process_review_job` to `JobProcessor` — end-to-end task execution
+  - [x] 30.1 Test: `test_creates_job_and_calls_processor` — `process_review_job(payload)` → `job_store.create_from_payload` called once; `processor.process(job)` called once
+  - [x] 30.2 Test: `test_uses_installation_id_from_payload` — `payload["installation"]["id"] == 99` → `make_processor(99)` called
+  - [x] 30.3 Test: `test_missing_installation_id_defaults_to_zero` — payload with no `installation.id` → `make_processor(0)` called
+  - [x] 30.4 Test: `test_returns_job_with_payload_fields` — `JobStore.create_from_payload` maps `installation.id`, `repository.full_name`, `pull_request.number`, `pull_request.head.sha` to `Job`
+  - [x] 30.5 Test: `test_last_reviewed_sha_set_when_previous_complete_exists` — prior complete job found → `Job.last_reviewed_sha` populated
+  - [x] 30.6 Test: `test_job_id_is_unique_per_call` — two calls produce distinct `job.id` values
+  - [x] 30.7 Test: `test_update_status_executes_update` — `update_status(id, failed)` executes a DB UPDATE
+  - [x] 30.8 Test: `test_update_success_executes_update` — `update_success(id, sha, tokens)` executes a DB UPDATE
+  - [x] 30.9 Create `pr_reviewer/agents/llm.py` — `make_llm()` returns `_AzureOpenAILLM` when `AZURE_OPENAI_API_KEY` and `AZURE_OPENAI_ENDPOINT` are set; falls back to `_NoopLLM` stub otherwise
+  - [x] 30.10 Create `pr_reviewer/store/job_store.py` — `JobStore` with `create_from_payload`, `update_status`, `update_success`, `_get_last_reviewed_sha`
+  - [x] 30.11 Create `pr_reviewer/workers/container.py` — `WorkerContainer` holding shared connections (engine, Redis, ChromaDB, KnowledgeBase, MCPClient, ReviewAgent); `make_processor(installation_id)` creates per-request `JobProcessor`; `get_container()` returns process-level singleton
+  - [x] 30.12 Replace `raise NotImplementedError` stub in `tasks.py` — `process_review_job` calls `get_container().job_store.create_from_payload(payload)` then `container.make_processor(installation_id).process(job)`
+  _Requirements: 6.1, 6.2, 6.3_
+
 ## Notes
 
 - Tasks marked **[v2]** depend on all v1 tasks completing first; v2 may be deferred until the Feedback_Store has accumulated meaningful signal (3–6 months of reviews)

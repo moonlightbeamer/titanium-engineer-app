@@ -3,6 +3,10 @@
 import os
 from typing import Any
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 from celery import Celery, signals
 
 from pr_reviewer.logging import get_logger
@@ -18,6 +22,11 @@ celery_app = Celery(
     "pr_reviewer",
     broker=os.getenv("REDIS_URL", "redis://localhost:6379/0"),
     backend=os.getenv("REDIS_URL", "redis://localhost:6379/0"),
+    include=[
+        "pr_reviewer.workers.tasks",
+        "pr_reviewer.workers.feedback_processor",
+        "pr_reviewer.workers.indexer",
+    ],
 )
 
 celery_app.conf.update(
