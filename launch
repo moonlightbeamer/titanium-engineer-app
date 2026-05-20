@@ -183,7 +183,7 @@ ok "Redis ready"
 
 info "Waiting for ChromaDB…"
 RETRIES=20
-until curl -sf "http://localhost:${CHROMADB_PORT}/api/v1/heartbeat" >/dev/null 2>&1; do
+until curl -sf "http://localhost:${CHROMADB_PORT}/api/v2/heartbeat" >/dev/null 2>&1; do
   RETRIES=$((RETRIES - 1)); [[ $RETRIES -eq 0 ]] && fail "ChromaDB did not become ready in time."; sleep 1
 done
 ok "ChromaDB ready (port ${CHROMADB_PORT})"

@@ -66,7 +66,7 @@ def make_chromadb_probe(url: str) -> Callable[[], None]:
     import httpx
 
     def probe() -> None:
-        resp = httpx.get(f"{url}/api/v1/heartbeat", timeout=5.0)
+        resp = httpx.get(f"{url}/api/v2/heartbeat", timeout=5.0)
         resp.raise_for_status()
 
     return probe
