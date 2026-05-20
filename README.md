@@ -41,12 +41,20 @@ Inline comments on the PR with suggestions developers can apply
 The bot authenticates via a GitHub App. Create one at:
 **GitHub → Settings → Developer settings → GitHub Apps → New GitHub App**
 
+First, generate a webhook secret you'll use in the form:
+
+```bash
+openssl rand -hex 32
+```
+
+Copy the output — you'll need it in the form and again in `.env`.
+
 | Field | Value |
 |---|---|
 | GitHub App name | anything, e.g. `pr-auto-review-local` |
 | Homepage URL | `http://localhost:8000` |
 | Webhook URL | leave blank for now — you'll fill this in after `./launch` |
-| Webhook secret | generate a random string, e.g. `openssl rand -hex 32` |
+| Webhook secret | paste the hex string you just generated |
 | Repository permissions | Contents: Read · Pull requests: Read & write |
 | Subscribe to events | `Pull request` · `Pull request review` · `Pull request review comment` · `Push` |
 
@@ -56,15 +64,27 @@ After creating the app:
 
 ### Step 2 — Configure `.env`
 
-A `.env` file is already provided in the repo with the structure ready to fill in. Open it and complete the four blank fields:
+A `.env` file is already provided in the repo with the structure ready to fill in. Open it and complete the five blank fields:
 
 | Variable | Where to find it |
 |---|---|
 | `GITHUB_APP_ID` | GitHub → Settings → Developer settings → GitHub Apps → your app (shown at top of page) |
-| `GITHUB_APP_PRIVATE_KEY` | Same page → *Private keys* → *Generate a private key* → open the downloaded `.pem` in a text editor, paste the full contents, replacing each newline with `\n` |
-| `GITHUB_WEBHOOK_SECRET` | The random string you generated when creating the GitHub App in Step 1 |
+| `GITHUB_APP_PRIVATE_KEY` | See below |
+| `GITHUB_WEBHOOK_SECRET` | The hex string you generated in Step 1 |
 | `AZURE_OPENAI_ENDPOINT` | Azure Portal → your Azure OpenAI resource → *Keys and Endpoint* |
 | `AZURE_ANTHROPIC_ENDPOINT` | [Azure AI Foundry](https://ai.azure.com) → your project → *Overview* |
+
+**Converting the private key** — the `.pem` file must become a single-line value with literal `\n` between each line. Run this command (adjust the filename to match your download):
+
+```bash
+awk 'NF {printf "%s\\n", $0}' ~/Downloads/your-app.private-key.pem
+```
+
+Copy the entire output and paste it as the value for `GITHUB_APP_PRIVATE_KEY` in `.env`, keeping the surrounding double quotes. The result must be on one line:
+
+```
+GITHUB_APP_PRIVATE_KEY="-----BEGIN RSA PRIVATE KEY-----\nMIIEow...fxdfn/T\n-----END RSA PRIVATE KEY-----\n"
+```
 
 The API keys (`AZURE_OPENAI_API_KEY`, `AZURE_ANTHROPIC_API_KEY`) and backing service URLs (`DATABASE_URL`, `REDIS_URL`, `CHROMADB_URL`) are already populated. The deployment name defaults to `gpt-4o` — change it if your Azure deployment uses a different name.
 
@@ -78,7 +98,7 @@ The API keys (`AZURE_OPENAI_API_KEY`, `AZURE_ANTHROPIC_API_KEY`) and backing ser
 
 That's it. The script handles everything automatically:
 
-1. **Kills any previous run** — cleans up stale processes from the last session so ports 8000 and 4040 are always free
+1. **Kills any previous run** — cleans up stale processes from the last session so port 8000 is always free
 2. Installs cloudflared if not present
 3. Starts the Podman machine
 4. Starts PostgreSQL, Redis, ChromaDB, OTel Collector (with health checks)
