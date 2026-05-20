@@ -22,7 +22,7 @@ _NEGATIVE_MARKERS = ("won't fix", "wontfix", "not applicable", "by design")
 
 
 class FeedbackProcessor:
-    def __init__(self, feedback_store: "FeedbackStore", secret_scrubber: Any) -> None:
+    def __init__(self, feedback_store: FeedbackStore, secret_scrubber: Any) -> None:
         self._store = feedback_store
         self._scrubber = secret_scrubber
 

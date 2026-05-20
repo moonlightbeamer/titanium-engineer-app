@@ -197,16 +197,16 @@ Implement an LLM-backed GitHub PR review service in phases: v1 delivers the comp
   - [x] 14.7 Implement `pr_reviewer/store/feedback_store.py` — `FeedbackStore(db_engine: Engine)` with `insert(signal) -> None` and `query_recent(repo_id, file_path_patterns, limit=5) -> list[FeedbackSignal]`; SQLAlchemy Core only; no raw f-string SQL
   _Requirements: 9.1, 9.5, 9.6, 9.7_
 
-- [ ] 15. FeedbackProcessor
-  - [ ] 15.1 Test: `test_resolved_comment_without_suggestion_classified_negative` — `pull_request_review_comment` resolved, no suggestion → `SignalType.negative`
-  - [ ] 15.2 Test: `test_applied_suggestion_classified_positive` — suggestion-applied marker → `SignalType.positive`
-  - [ ] 15.3 Test: `test_wontfix_reply_classified_negative` — reply body "won't fix" → `SignalType.negative`
-  - [ ] 15.4 Test: `test_pull_request_review_submitted_suggestion_accepted_positive` — `pull_request_review` event with approved suggestion → `SignalType.positive`
-  - [ ] 15.5 Test: `test_secret_scrubber_called_before_building_signal` — payload with secret-like string → `SecretScrubber.scrub` called; scrubbed content used (Property 5)
-  - [ ] 15.6 Test: `test_feedback_signal_persisted_to_store` — signal classified → `FeedbackStore.insert` called with correct `FeedbackSignal`
-  - [ ] 15.7 Test: `test_unknown_event_type_logs_warn_and_returns_without_insert` — unrecognised event → WARN logged; `FeedbackStore.insert` never called
-  - [ ] 15.8 Test: `test_file_path_pattern_extracted_from_comment` — comment on `src/auth/login.py` → `file_path_pattern == "src/auth/**"`
-  - [ ] 15.9 Implement `pr_reviewer/workers/feedback_processor.py` — Celery task `process_feedback_job(event_type, payload)`; `_classify_signal`; `_extract_file_path_pattern`; `_extract_finding_category`
+- [x] 15. FeedbackProcessor
+  - [x] 15.1 Test: `test_resolved_comment_without_suggestion_classified_negative` — `pull_request_review_comment` resolved, no suggestion → `SignalType.negative`
+  - [x] 15.2 Test: `test_applied_suggestion_classified_positive` — suggestion-applied marker → `SignalType.positive`
+  - [x] 15.3 Test: `test_wontfix_reply_classified_negative` — reply body "won't fix" → `SignalType.negative`
+  - [x] 15.4 Test: `test_pull_request_review_submitted_suggestion_accepted_positive` — `pull_request_review` event with approved suggestion → `SignalType.positive`
+  - [x] 15.5 Test: `test_secret_scrubber_called_before_building_signal` — payload with secret-like string → `SecretScrubber.scrub` called; scrubbed content used (Property 5)
+  - [x] 15.6 Test: `test_feedback_signal_persisted_to_store` — signal classified → `FeedbackStore.insert` called with correct `FeedbackSignal`
+  - [x] 15.7 Test: `test_unknown_event_type_logs_warn_and_returns_without_insert` — unrecognised event → WARN logged; `FeedbackStore.insert` never called
+  - [x] 15.8 Test: `test_file_path_pattern_extracted_from_comment` — comment on `src/auth/login.py` → `file_path_pattern == "src/auth/**"`
+  - [x] 15.9 Implement `pr_reviewer/workers/feedback_processor.py` — Celery task `process_feedback_job(event_type, payload)`; `_classify_signal`; `_extract_file_path_pattern`; `_extract_finding_category`
   _Requirements: 9.1, 9.2, 9.3, 9.4, 9.5, 9.6, 9.7_
 
 - [ ] 16. JobProcessor

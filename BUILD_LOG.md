@@ -263,3 +263,59 @@ Chronological record of implementation steps. Appended after each task completes
 ---
 
 **Running totals:** 111 unit tests · 6 integration tests · 3 pre-existing OTel isolation failures · lint clean
+
+---
+
+### Task 13 — CommentPoster
+
+- Created `pr_reviewer/components/comment_poster.py`:
+  - `CommentPoster(github_client)` — `post(findings, repo, pr_number, config) -> None`.
+  - `_filter_by_severity(findings, min_severity)` — filters using `_SEVERITY_RANK` dict ("low": 0, "medium": 1, "high": 2).
+  - `_dedup(findings, existing_reviews)` — extracts `(path, line)` pairs from existing review comment dicts; skips findings already commented.
+  - `_format_comment(finding)` — builds `{"path": ..., "line": ..., "body": ...}`; appends GitHub suggestion block syntax (` ```suggestion\n...\n``` `) when suggestion is non-None.
+  - `_determine_review_status(findings, config)` — `"REQUEST_CHANGES"` when any non-escalation finding has high severity; `"APPROVE"` when empty + `auto_approve_on_no_findings`; `"COMMENT"` otherwise.
+  - `_build_summary_body(findings)` — "No issues found." (empty) or "Found N issue(s) across M category/categories.".
+  - 422 fallback: on batch `httpx.HTTPStatusError` with status 422, falls back to individual per-comment calls; skips individual comments that also return 422.
+
+**Tests:** 11 unit tests — all green (0.06s). Lint clean.
+
+**Files created:** `pr_reviewer/components/comment_poster.py`, `tests/unit/test_comment_poster.py`.
+
+---
+
+### Task 14 — FeedbackStore
+
+- Created `pr_reviewer/store/feedback_store.py`:
+  - `_TABLE` — SQLAlchemy `Table` definition for `feedback_signals` (mirrors Alembic migration 003).
+  - `FeedbackStore(engine)` — calls `_TABLE.metadata.create_all(engine)` at init (enables SQLite in-memory for unit tests without migrations).
+  - `insert(signal)` — perserts all fields as strings (UUIDs, enums serialized to str); uses SQLAlchemy Core `insert().values()`.
+  - `query_recent(repo_id, file_path_patterns, limit)` — parameterized `SELECT` with `WHERE repo_id = :repo_id`, optional `IN (file_path_patterns)` filter, `ORDER BY timestamp DESC`, `LIMIT limit`. Returns `list[FeedbackSignal]` via `_row_to_signal`.
+  - `_ensure_utc(ts)` — adds UTC tzinfo when stored timestamp lacks it (SQLite drops tzinfo on roundtrip).
+
+**Tests:** 6 unit tests — all green (6.82s). Lint clean.
+
+**Files created:** `pr_reviewer/store/feedback_store.py`, `tests/unit/test_feedback_store.py`.
+
+---
+
+### Task 15 — FeedbackProcessor
+
+- Created `pr_reviewer/workers/feedback_processor.py`:
+  - `FeedbackProcessor(feedback_store, secret_scrubber)` — `process(event_type, payload)` entry point:
+    - Rejects unsupported events with WARN log and early return.
+    - Calls `secret_scrubber.scrub(body, source="feedback")` before building signal.
+    - Classifies via `_classify_signal`; extracts file pattern via `_extract_file_path_pattern`; extracts category via `_extract_finding_category`.
+    - Calls `feedback_store.insert(FeedbackSignal(...))`.
+  - `_classify_signal(event_type, payload)`:
+    - `pull_request_review` with `state=approved` → positive; otherwise negative.
+    - `pull_request_review_comment`: checks body for positive markers ("applied in commit", "suggestion applied") → positive; negative markers ("won't fix", "wontfix") → negative; `action=resolved` → negative; default → positive.
+  - `_extract_file_path_pattern(path)` — takes parent directory, but caps at 2 path components: `src/auth/login.py` → `src/auth/**`; `a/b/c/d.py` → `a/b/**`; top-level files → `**`.
+  - `_extract_finding_category(body)` — keyword match: "security/injection/xss" → security; "performance/slow/latency" → performance; "style/format/naming" → style; default → bugs.
+
+**Tests:** 8 unit tests — all green (0.06s). Lint clean.
+
+**Files created:** `pr_reviewer/workers/feedback_processor.py`, `tests/unit/test_feedback_processor.py`.
+
+---
+
+**Running totals:** 133 unit tests · 6 integration tests · 3 pre-existing OTel isolation failures · lint clean
