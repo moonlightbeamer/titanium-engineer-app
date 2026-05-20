@@ -200,3 +200,26 @@ Chronological record of implementation steps. Appended after each task completes
 ---
 
 **Running totals:** 83 unit tests · 6 integration tests · 0 failures · lint clean
+
+---
+
+### Task 11 — MCPClient
+
+- Added `osv: str = "https://api.osv.dev"` to `MCPServersConfig` (design specifies NVD + OSV as default MCP servers).
+- Created `pr_reviewer/kb/mcp_client.py`:
+  - `CVEAdvisory(frozen=True)`: `id`, `description`, `severity`, `source` (default "nvd").
+  - `EscalationResult(frozen=True)`: `reason`, `cve_id`.
+  - `NVD_RATE_LIMIT = 10`, `OSV_RATE_LIMIT = 20` per minute.
+  - `_build_traceparent()` — injects W3C traceparent using OTel current span context; falls back to `secrets.token_hex` random IDs when no active span.
+  - `_check_rate_limit(server)` — Redis INCR on key `mcp:rate_limit:{server}:{minute_bucket}`; EXPIRE 120s; returns False when count > limit.
+  - `lookup_cve(cve_id)` — checks NVD rate limit; if exhausted, calls `_fallback_to_kb`; otherwise `GET {nvd_endpoint}/rest/json/cves/2.0`; on HTTP error (4xx/5xx), also falls back.
+  - `check_package_advisory(package)` — same pattern for OSV; `POST {osv_endpoint}/v1/query`.
+  - `_fallback_to_kb(id)` — calls `KnowledgeBase.query(id, category="security", language="")`; if empty → `EscalationResult(reason="could not verify against live CVE data")`; otherwise → `CVEAdvisory(source="fallback_corpus")`.
+
+**Tests:** 7 unit tests — all green (5.5s). Lint clean.
+
+**Files created/modified:** `pr_reviewer/kb/mcp_client.py`, `pr_reviewer/config/schema.py` (added `osv` field), `tests/unit/test_mcp_client.py`.
+
+---
+
+**Running totals:** 90 unit tests · 6 integration tests · 3 pre-existing OTel isolation failures · lint clean

@@ -7,6 +7,7 @@ class MCPServersConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     nvd: str = "https://services.nvd.nist.gov"
+    osv: str = "https://api.osv.dev"
     semgrep: str = "https://semgrep.dev"
 
 

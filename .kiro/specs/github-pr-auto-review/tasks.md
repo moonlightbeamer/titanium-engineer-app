@@ -134,15 +134,15 @@ Implement an LLM-backed GitHub PR review service in phases: v1 delivers the comp
   - [x] 10.12 Implement `pr_reviewer/kb/knowledge_base.py` — `KnowledgeBase(chromadb_client, config: Config)` with `query(query, category, language, priming=False) -> list[KBEntry]` and `validate_model_versions() -> bool`; six collections pre-created at startup; per-language weighting applied to `language_best_practices` corpus only
   _Requirements: 11.1, 11.2, 11.5, 11.7, 11.8, 11.9, 16.5_
 
-- [ ] 11. MCPClient
-  - [ ] 11.1 Test: `test_lookup_cve_calls_default_nvd_endpoint` — no `mcp_servers` in Config → `GET https://services.nvd.nist.gov/...`
-  - [ ] 11.2 Test: `test_lookup_cve_calls_custom_endpoint_from_config` — `config.mcp_servers.nvd = "http://proxy:9200"` → HTTP call goes to `http://proxy:9200/...`
-  - [ ] 11.3 Test: `test_nvd_rate_limit_fallback_to_cve_snapshot` — NVD token bucket exhausted → `KnowledgeBase.query` called for `cve_snapshot`; result tagged `source: fallback_corpus`; WARN logged with server name
-  - [ ] 11.4 Test: `test_fallback_chain_mcp_unavailable_and_corpus_empty` — NVD returns 503 AND `KnowledgeBase.query` returns `[]` → returns `EscalationResult(reason="could not verify against live CVE data")`
-  - [ ] 11.5 Test: `test_traceparent_header_on_every_mcp_call` — all outbound HTTP calls include `traceparent` in W3C format
-  - [ ] 11.6 Test: `test_rate_limit_bucket_per_server_independent` — NVD bucket exhausted; OSV bucket still has capacity → OSV calls succeed while NVD falls back
-  - [ ] 11.7 Test: `test_nvd_rate_limit_bucket_is_10_per_minute` — 11 NVD calls within 60s → 11th triggers fallback
-  - [ ] 11.8 Implement `pr_reviewer/kb/mcp_client.py` — `MCPClient(knowledge_base, config, redis_client)`; `lookup_cve` and `check_package_advisory` reading endpoint URLs from Config; Redis token buckets per server; fallback chain; `CVEAdvisory` and `EscalationResult` frozen dataclasses
+- [x] 11. MCPClient
+  - [x] 11.1 Test: `test_lookup_cve_calls_default_nvd_endpoint` — no `mcp_servers` in Config → `GET https://services.nvd.nist.gov/...`
+  - [x] 11.2 Test: `test_lookup_cve_calls_custom_endpoint_from_config` — `config.mcp_servers.nvd = "http://proxy:9200"` → HTTP call goes to `http://proxy:9200/...`
+  - [x] 11.3 Test: `test_nvd_rate_limit_fallback_to_cve_snapshot` — NVD token bucket exhausted → `KnowledgeBase.query` called for `cve_snapshot`; result tagged `source: fallback_corpus`; WARN logged with server name
+  - [x] 11.4 Test: `test_fallback_chain_mcp_unavailable_and_corpus_empty` — NVD returns 503 AND `KnowledgeBase.query` returns `[]` → returns `EscalationResult(reason="could not verify against live CVE data")`
+  - [x] 11.5 Test: `test_traceparent_header_on_every_mcp_call` — all outbound HTTP calls include `traceparent` in W3C format
+  - [x] 11.6 Test: `test_rate_limit_bucket_per_server_independent` — NVD bucket exhausted; OSV bucket still has capacity → OSV calls succeed while NVD falls back
+  - [x] 11.7 Test: `test_nvd_rate_limit_bucket_is_10_per_minute` — 11 NVD calls within 60s → 11th triggers fallback
+  - [x] 11.8 Implement `pr_reviewer/kb/mcp_client.py` — `MCPClient(knowledge_base, config, redis_client)`; `lookup_cve` and `check_package_advisory` reading endpoint URLs from Config; Redis token buckets per server; fallback chain; `CVEAdvisory` and `EscalationResult` frozen dataclasses
   _Requirements: 11.3, 11.4, 11.5, 11.6, 11.10_
 
 - [ ] 12. ToolBudgetMiddleware and ReviewAgent
