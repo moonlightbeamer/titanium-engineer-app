@@ -34,56 +34,88 @@ Inline comments on the PR with suggestions developers can apply
 
 ---
 
-## Setup (one-time per installation)
+## Running locally
 
-### 1. Create a GitHub App
+### Step 1 — Create a GitHub App (one-time)
 
-In your GitHub organisation settings, create a new GitHub App with:
+The bot authenticates via a GitHub App. Create one at:
+**GitHub → Settings → Developer settings → GitHub Apps → New GitHub App**
 
-- **Repository permissions:** Contents (read), Pull requests (read/write)
-- **Webhook events:** `pull_request`, `pull_request_review`, `pull_request_review_comment`
-- **Webhook URL:** `https://your-domain.com/webhook/github`
+| Field | Value |
+|---|---|
+| GitHub App name | anything, e.g. `pr-auto-review-local` |
+| Homepage URL | `http://localhost:8000` |
+| Webhook URL | leave blank for now — you'll fill this in after `./launch` |
+| Webhook secret | generate a random string, e.g. `openssl rand -hex 32` |
+| Repository permissions | Contents: Read · Pull requests: Read & write |
+| Subscribe to events | `Pull request` · `Pull request review` · `Pull request review comment` |
 
-Download the private key and note your App ID.
+After creating the app:
+1. Note your **App ID** (shown at the top of the app settings page)
+2. Scroll to **Private keys** → **Generate a private key** → download the `.pem` file
 
-### 2. Configure environment variables
+### Step 2 — Configure `.env`
 
-Copy `.env.example` to `.env` and fill in:
+Copy `.env.example` to `.env` and fill in your values:
 
 ```bash
 GITHUB_APP_ID=123456
-GITHUB_APP_PRIVATE_KEY="-----BEGIN RSA PRIVATE KEY-----\n..."
-GITHUB_WEBHOOK_SECRET=your_webhook_secret
+GITHUB_APP_PRIVATE_KEY="-----BEGIN RSA PRIVATE KEY-----\n..."   # contents of the .pem file, newlines as \n
+GITHUB_WEBHOOK_SECRET=your_webhook_secret                        # the secret you set in Step 1
 OPENAI_API_KEY=sk-...
-DATABASE_URL=postgresql://user:pass@localhost:5432/pr_reviewer
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/pr_reviewer
 REDIS_URL=redis://localhost:6379/0
 CHROMADB_URL=http://localhost:8001
 LOG_LEVEL=INFO
 ```
 
-### 3. Start the service
+### Step 3 — Launch
 
 ```bash
-docker-compose up
+./launch
 ```
 
-This starts:
-- FastAPI webhook receiver
-- Celery workers (max 10 concurrent review jobs)
-- PostgreSQL (jobs, findings, feedback)
-- Redis (job queue, token cache)
-- ChromaDB (knowledge base vector store)
-- OTel Collector (traces and metrics)
+That's it. The script handles everything automatically:
 
-### 4. Run database migrations
+1. **Kills any previous run** — cleans up stale processes from the last session so ports 8000 and 4040 are always free
+2. Installs ngrok if not present
+3. Starts the Podman machine
+4. Starts PostgreSQL, Redis, ChromaDB, OTel Collector (with health checks)
+5. Installs Python dependencies
+6. Runs database migrations
+7. Starts FastAPI + Celery workers
+8. Opens an ngrok tunnel and prints your public webhook URL
 
-```bash
-make migrate
+Safe to run multiple times — each run stops the previous one cleanly before starting fresh.
+
+At the end you'll see:
+
+```
+GitHub webhook URL : https://abc123.ngrok-free.app/webhook/github
+→ Paste into: GitHub → Settings → Developer settings → GitHub Apps → Edit → Webhook URL
+→ This URL changes on every restart (free ngrok). Re-paste it after each ./launch.
 ```
 
-### 5. Install the GitHub App on your repositories
+### Step 4 — Wire the webhook URL into GitHub
 
-In GitHub, navigate to your App's installation settings and select the repositories you want reviewed.
+1. Copy the `https://…ngrok-free.app/webhook/github` URL printed by `./launch`
+2. Go to: **GitHub → Settings → Developer settings → GitHub Apps → Edit**
+3. Paste it into the **Webhook URL** field → **Save changes**
+
+> **Free ngrok gives you a new URL on every restart.** Re-paste it into your GitHub App after each `./launch`. To get a stable URL, add an authtoken from [dashboard.ngrok.com](https://dashboard.ngrok.com) — free accounts get one static domain.
+
+### Step 5 — Install the app on a repository
+
+1. In your GitHub App settings, go to **Install App**
+2. Click **Install** next to your account or organisation
+3. Choose **Only select repositories** → select the repo you want reviewed
+4. Click **Install**
+
+### Step 6 — Open a pull request
+
+Open or update a PR in the installed repository. Within 10 minutes the bot posts its review inline on the Files Changed tab.
+
+To verify the webhook is firing: the ngrok dashboard at `http://localhost:4040` shows every request and response in real time.
 
 ---
 
@@ -158,7 +190,7 @@ The default ignore list covers: `package-lock.json`, `yarn.lock`, `*.lock`, `ven
 ### Health check
 
 ```bash
-curl https://your-domain.com/health
+curl http://localhost:8000/health
 # {"status": "ok", "db": "ok", "redis": "ok", "chromadb": "ok"}
 ```
 
@@ -245,20 +277,27 @@ The service is a single FastAPI application with Celery workers. See [`.kiro/spe
 ## Development
 
 ```bash
-# Install dependencies
-uv sync
+# Full local stack with public tunnel — safe to run multiple times
+./launch
 
+# Backing services only (no app, no tunnel) — useful when iterating on code
+./launch --services-only
+
+# Skip migrations on fast restarts
+./launch --no-migrate
+
+# Skip ngrok (if you have a stable public URL already)
+./launch --no-tunnel
+```
+
+Each run automatically kills the previous session (app processes, ngrok) before starting fresh — no manual cleanup needed. Logs are written to `logs/` — `api.log`, `worker-review.log`, `worker-feedback.log`, `ngrok.log`.
+
+```bash
 # Run tests
 make test
 
 # Run linter
 make lint
-
-# Start local services (PostgreSQL, Redis, ChromaDB)
-docker-compose up postgres redis chromadb
-
-# Start the app locally
-make run
 ```
 
 ### Project layout

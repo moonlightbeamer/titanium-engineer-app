@@ -1,0 +1,324 @@
+#!/usr/bin/env bash
+# Launch script for GitHub PR Auto-Review service.
+# Starts all backing services, runs migrations, starts the app, and opens an
+# ngrok tunnel so GitHub can deliver webhooks to localhost.
+#
+# Usage: ./launch [--services-only] [--no-migrate] [--no-tunnel]
+#   --services-only   Start backing services only (skip app + tunnel)
+#   --no-migrate      Skip alembic migration step
+#   --no-tunnel       Skip ngrok tunnel (if you have a public URL already)
+
+set -euo pipefail
+
+# ── Colours ──────────────────────────────────────────────────────────────────
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+BOLD='\033[1m'
+NC='\033[0m'
+
+ok()     { echo -e "${GREEN}✓${NC} $*"; }
+info()   { echo -e "${BLUE}→${NC} $*"; }
+warn()   { echo -e "${YELLOW}⚠${NC}  $*"; }
+fail()   { echo -e "${RED}✗${NC} $*" >&2; exit 1; }
+header() { echo -e "\n${BOLD}$*${NC}"; }
+
+# ── Flags ────────────────────────────────────────────────────────────────────
+SERVICES_ONLY=false
+NO_MIGRATE=false
+NO_TUNNEL=false
+for arg in "$@"; do
+  case "$arg" in
+    --services-only) SERVICES_ONLY=true ;;
+    --no-migrate)    NO_MIGRATE=true ;;
+    --no-tunnel)     NO_TUNNEL=true ;;
+    *) fail "Unknown argument: $arg" ;;
+  esac
+done
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PID_FILE="$SCRIPT_DIR/.launch.pids"
+LOG_DIR="$SCRIPT_DIR/logs"
+mkdir -p "$LOG_DIR"
+
+# PIDs of background processes — collected for clean shutdown
+APP_PIDS=()
+
+cleanup() {
+  echo ""
+  header "Shutting down…"
+  for pid in "${APP_PIDS[@]:-}"; do
+    if kill -0 "$pid" 2>/dev/null; then
+      info "Stopping process $pid"
+      kill "$pid" 2>/dev/null || true
+    fi
+  done
+  info "Stopping backing services…"
+  (cd "$SCRIPT_DIR" && podman compose down 2>/dev/null) || true
+  rm -f "$PID_FILE"
+  ok "Done."
+}
+trap cleanup INT TERM
+
+# ── Stop previous run ─────────────────────────────────────────────────────────
+if [[ -f "$PID_FILE" ]]; then
+  header "Stopping previous run"
+  while IFS= read -r pid; do
+    if kill -0 "$pid" 2>/dev/null; then
+      info "Killing stale process $pid"
+      kill "$pid" 2>/dev/null || true
+    fi
+  done < "$PID_FILE"
+  rm -f "$PID_FILE"
+  sleep 1
+fi
+
+# Belt-and-braces: free the ports even if PID file was missing
+for port in 8000 4040; do
+  pid=$(lsof -ti ":$port" 2>/dev/null || true)
+  if [[ -n "$pid" ]]; then
+    warn "Port $port still held by PID $pid — killing it"
+    kill "$pid" 2>/dev/null || true
+    sleep 1
+  fi
+done
+
+# ── Step 1: Prerequisites ─────────────────────────────────────────────────────
+header "Checking prerequisites"
+
+command -v podman >/dev/null 2>&1         || fail "podman not found — install: brew install podman"
+command -v podman-compose >/dev/null 2>&1 || fail "podman-compose not found — install: brew install podman-compose"
+command -v uv >/dev/null 2>&1             || fail "uv not found — install: brew install uv"
+command -v curl >/dev/null 2>&1           || fail "curl not found"
+
+ok "podman $(podman --version | awk '{print $3}')"
+ok "podman-compose $(podman-compose --version 2>/dev/null | awk '/version/{print $NF}' | head -1 || echo 'installed')"
+ok "uv $(uv --version | awk '{print $2}')"
+
+# ── Step 2: ngrok ─────────────────────────────────────────────────────────────
+if [[ "$NO_TUNNEL" == "false" && "$SERVICES_ONLY" == "false" ]]; then
+  header "ngrok"
+  if ! command -v ngrok >/dev/null 2>&1; then
+    info "ngrok not found — installing via Homebrew…"
+    brew install ngrok/ngrok/ngrok || fail "Failed to install ngrok. Install manually: https://ngrok.com/download"
+  fi
+  ok "ngrok $(ngrok version | awk '{print $3}')"
+
+  # Warn if no auth token is configured — ngrok works but with short session limits
+  if ! ngrok config check >/dev/null 2>&1 || ! grep -q "authtoken" "$HOME/.config/ngrok/ngrok.yml" 2>/dev/null; then
+    warn "No ngrok authtoken found. Sessions will expire after 2 hours."
+    warn "Get a free token at https://dashboard.ngrok.com and run: ngrok config add-authtoken <token>"
+  fi
+fi
+
+# ── Step 3: Podman machine ────────────────────────────────────────────────────
+header "Podman machine"
+
+MACHINE_NAME=$(podman machine list --format "{{.Name}}" 2>/dev/null | head -1)
+if [[ -z "$MACHINE_NAME" ]]; then
+  info "No Podman machine found — creating one…"
+  podman machine init
+  MACHINE_NAME=$(podman machine list --format "{{.Name}}" | head -1)
+fi
+
+if podman info >/dev/null 2>&1; then
+  ok "Machine '$MACHINE_NAME' is running"
+else
+  info "Starting machine '$MACHINE_NAME'…"
+  podman machine start "$MACHINE_NAME"
+  ok "Machine started"
+fi
+
+# ── Step 4: Environment file ──────────────────────────────────────────────────
+header "Environment"
+
+if [[ ! -f "$SCRIPT_DIR/.env" ]]; then
+  if [[ -f "$SCRIPT_DIR/.env.example" ]]; then
+    warn ".env not found — copying from .env.example. Fill in secrets before using the app."
+    cp "$SCRIPT_DIR/.env.example" "$SCRIPT_DIR/.env"
+  else
+    warn ".env not found and no .env.example exists yet. App may fail to start."
+    warn "Required: GITHUB_APP_ID, GITHUB_APP_PRIVATE_KEY, GITHUB_WEBHOOK_SECRET, OPENAI_API_KEY, DATABASE_URL, REDIS_URL, CHROMADB_URL, LOG_LEVEL"
+  fi
+else
+  ok ".env found"
+fi
+
+# ── Step 5: Compose file ──────────────────────────────────────────────────────
+header "Compose file"
+
+COMPOSE_FILE=""
+for f in docker-compose.yml docker-compose.yaml podman-compose.yml podman-compose.yaml compose.yml compose.yaml; do
+  if [[ -f "$SCRIPT_DIR/$f" ]]; then
+    COMPOSE_FILE="$f"
+    break
+  fi
+done
+
+[[ -z "$COMPOSE_FILE" ]] && fail "No compose file found. Created in task 1.3 of tasks.md — complete the implementation tasks first."
+ok "Using $COMPOSE_FILE"
+
+# ── Step 6: Backing services ──────────────────────────────────────────────────
+header "Starting backing services"
+
+info "Pulling images (skipped if already present)…"
+(cd "$SCRIPT_DIR" && podman compose pull --quiet 2>/dev/null) || warn "Image pull had warnings — continuing."
+
+info "Starting PostgreSQL, Redis, ChromaDB, OTel Collector…"
+(cd "$SCRIPT_DIR" && podman compose up -d postgres redis chromadb otel-collector 2>/dev/null) || \
+  (cd "$SCRIPT_DIR" && podman compose up -d 2>/dev/null) || \
+  fail "podman compose up failed — check your compose file."
+
+CHROMADB_PORT="${CHROMADB_PORT:-8001}"
+
+info "Waiting for PostgreSQL…"
+RETRIES=30
+until (cd "$SCRIPT_DIR" && podman compose exec -T postgres pg_isready -U "${POSTGRES_USER:-postgres}" >/dev/null 2>&1); do
+  RETRIES=$((RETRIES - 1)); [[ $RETRIES -eq 0 ]] && fail "PostgreSQL did not become ready in time."; sleep 1
+done
+ok "PostgreSQL ready"
+
+info "Waiting for Redis…"
+RETRIES=15
+until (cd "$SCRIPT_DIR" && podman compose exec -T redis redis-cli ping 2>/dev/null | grep -q PONG); do
+  RETRIES=$((RETRIES - 1)); [[ $RETRIES -eq 0 ]] && fail "Redis did not become ready in time."; sleep 1
+done
+ok "Redis ready"
+
+info "Waiting for ChromaDB…"
+RETRIES=20
+until curl -sf "http://localhost:${CHROMADB_PORT}/api/v1/heartbeat" >/dev/null 2>&1; do
+  RETRIES=$((RETRIES - 1)); [[ $RETRIES -eq 0 ]] && fail "ChromaDB did not become ready in time."; sleep 1
+done
+ok "ChromaDB ready (port ${CHROMADB_PORT})"
+
+[[ "$SERVICES_ONLY" == "true" ]] && { ok "Services running. Exiting (--services-only)."; exit 0; }
+
+# ── Step 7: Python dependencies ───────────────────────────────────────────────
+header "Python environment"
+
+if [[ ! -d "$SCRIPT_DIR/.venv" ]]; then
+  info "Creating virtualenv and installing dependencies…"
+  (cd "$SCRIPT_DIR" && uv sync)
+else
+  info "Syncing dependencies…"
+  (cd "$SCRIPT_DIR" && uv sync --quiet)
+fi
+ok "Dependencies ready"
+
+# ── Step 8: App code check ────────────────────────────────────────────────────
+header "App code"
+
+APP_MODULE="pr_reviewer"
+if [[ ! -d "$SCRIPT_DIR/$APP_MODULE" ]]; then
+  fail "'$APP_MODULE/' not found — complete tasks.md implementation tasks first. Use './launch --services-only' to start backing services only."
+fi
+ok "$APP_MODULE/ found"
+
+# ── Step 9: Database migrations ───────────────────────────────────────────────
+if [[ "$NO_MIGRATE" == "false" ]]; then
+  header "Database migrations"
+  info "Running alembic upgrade head…"
+  (cd "$SCRIPT_DIR" && uv run alembic upgrade head) || fail "Migrations failed — check alembic/ directory."
+  ok "Migrations applied"
+fi
+
+# ── Step 10: Start the app ────────────────────────────────────────────────────
+header "Starting app"
+
+info "Starting FastAPI (port 8000)…"
+(cd "$SCRIPT_DIR" && uv run uvicorn pr_reviewer.api.main:app \
+  --host 0.0.0.0 --port 8000 --reload \
+  2>&1 | tee "$LOG_DIR/api.log") &
+APP_PIDS+=($!)
+echo $! >> "$PID_FILE"
+sleep 1
+
+info "Starting Celery worker — review_jobs (concurrency 10)…"
+(cd "$SCRIPT_DIR" && uv run celery -A pr_reviewer.workers worker \
+  -Q review_jobs --concurrency 10 --loglevel info \
+  2>&1 | tee "$LOG_DIR/worker-review.log") &
+APP_PIDS+=($!)
+echo $! >> "$PID_FILE"
+
+info "Starting Celery worker — feedback_jobs…"
+(cd "$SCRIPT_DIR" && uv run celery -A pr_reviewer.workers worker \
+  -Q feedback_jobs --concurrency 4 --loglevel info \
+  2>&1 | tee "$LOG_DIR/worker-feedback.log") &
+APP_PIDS+=($!)
+echo $! >> "$PID_FILE"
+
+sleep 2
+
+# ── Step 11: Health check ─────────────────────────────────────────────────────
+header "Health check"
+
+RETRIES=15
+until curl -sf "http://localhost:8000/health" >/dev/null 2>&1; do
+  RETRIES=$((RETRIES - 1))
+  if [[ $RETRIES -eq 0 ]]; then
+    warn "Health check timed out — app may still be starting. Check $LOG_DIR/api.log."
+    break
+  fi
+  sleep 1
+done
+
+if curl -sf "http://localhost:8000/health" >/dev/null 2>&1; then
+  HEALTH=$(curl -sf "http://localhost:8000/health")
+  ok "App healthy: $HEALTH"
+fi
+
+# ── Step 12: ngrok tunnel ─────────────────────────────────────────────────────
+PUBLIC_URL=""
+
+if [[ "$NO_TUNNEL" == "false" ]]; then
+  header "ngrok tunnel"
+
+  info "Starting ngrok tunnel on port 8000…"
+  ngrok http 8000 --log "$LOG_DIR/ngrok.log" --log-format json &
+  NGROK_PID=$!
+  APP_PIDS+=($NGROK_PID)
+  echo $NGROK_PID >> "$PID_FILE"
+
+  # Poll ngrok's local API until the public URL is available
+  RETRIES=20
+  until PUBLIC_URL=$(curl -sf http://localhost:4040/api/tunnels 2>/dev/null \
+      | grep -o '"public_url":"https://[^"]*"' \
+      | head -1 \
+      | cut -d'"' -f4); [[ -n "$PUBLIC_URL" ]]; do
+    RETRIES=$((RETRIES - 1))
+    if [[ $RETRIES -eq 0 ]]; then
+      warn "Could not retrieve ngrok public URL. Check $LOG_DIR/ngrok.log."
+      PUBLIC_URL="(ngrok URL unavailable — check $LOG_DIR/ngrok.log)"
+      break
+    fi
+    sleep 1
+  done
+  ok "Tunnel active: $PUBLIC_URL"
+fi
+
+# ── Done ──────────────────────────────────────────────────────────────────────
+echo ""
+echo -e "${BOLD}${GREEN}PR Auto-Review is running.${NC}"
+echo ""
+if [[ -n "$PUBLIC_URL" && "$PUBLIC_URL" != \(* ]]; then
+  echo -e "  ${BOLD}GitHub webhook URL${NC} : ${CYAN}${PUBLIC_URL}/webhook/github${NC}"
+  echo -e "  ${YELLOW}→ Paste into: GitHub → Settings → Developer settings → GitHub Apps → Edit → Webhook URL${NC}"
+  echo -e "  ${YELLOW}→ This URL changes on every restart (free ngrok). Re-paste it after each ./launch.${NC}"
+  echo ""
+fi
+echo -e "  Local webhook    : ${BLUE}http://localhost:8000/webhook/github${NC}"
+echo -e "  Health check     : ${BLUE}http://localhost:8000/health${NC}"
+echo -e "  ChromaDB         : ${BLUE}http://localhost:${CHROMADB_PORT}${NC}"
+if [[ "$NO_TUNNEL" == "false" ]]; then
+  echo -e "  ngrok dashboard  : ${BLUE}http://localhost:4040${NC}"
+fi
+echo -e "  Logs             : ${BLUE}$LOG_DIR/${NC}"
+echo ""
+echo -e "  Press ${BOLD}Ctrl+C${NC} to stop everything."
+echo ""
+
+# Wait for background processes
+wait "${APP_PIDS[@]}"
