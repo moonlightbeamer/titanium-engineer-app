@@ -136,3 +136,20 @@ Chronological record of implementation steps. Appended after each task completes
 ---
 
 **Running totals:** 55 unit tests · 6 integration tests · 0 failures · lint clean
+
+---
+
+### Task 8 — SecretScrubber
+
+- Created `pr_reviewer/components/secret_scrubber.py`:
+  - `Detection(frozen=True)` dataclass: `secret_type`, `line_number` — never exposes the raw secret value.
+  - `SecretScrubber.scrub(content, source, corpus, entry_id)` — writes content to a tempfile, runs `detect_secrets.SecretsCollection.scan_file()` with 10 plugins (AWSKeyDetector, GitHubTokenDetector, GitLabTokenDetector, PrivateKeyDetector, SlackDetector, StripeDetector, TwilioKeyDetector, KeywordDetector, HexHighEntropyString, Base64HighEntropyString); constructs a new string via `str.replace()` — never mutates input; when `source="kb"`, logs ERROR with corpus and entry_id.
+- **Note:** `HexHighEntropyString` plugin parameter is `limit`, not `hex_limit` (API change in detect-secrets 1.5).
+
+**Tests:** 8 unit tests — all green (0.13s). Lint clean.
+
+**Files created:** `pr_reviewer/components/secret_scrubber.py`, `tests/unit/test_secret_scrubber.py`.
+
+---
+
+**Running totals:** 63 unit tests · 6 integration tests · 0 failures · lint clean

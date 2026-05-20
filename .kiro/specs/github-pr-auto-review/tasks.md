@@ -94,16 +94,16 @@ Implement an LLM-backed GitHub PR review service in phases: v1 delivers the comp
   - [x] 7.10 Implement `pr_reviewer/components/diff_parser.py` — `DiffParser` with `parse(raw_diff: str, config: Config) -> StructuredDiff`; frozen data classes: `StructuredDiff`, `ChangedFile`, `Hunk`, `DiffLine`; `ChangeType` enum; pure function, no I/O
   _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.8_
 
-- [ ] 8. SecretScrubber
-  - [ ] 8.1 Test: `test_aws_access_key_redacted` — string containing `AKIA...` → `[REDACTED]` in output
-  - [ ] 8.2 Test: `test_github_token_redacted` — `ghp_...` token → `[REDACTED]`
-  - [ ] 8.3 Test: `test_clean_content_returned_byte_for_byte_identical` — no secrets → `output == input` (Property 5)
-  - [ ] 8.4 Test: `test_returns_new_string_not_in_place` — function is pure; input content unchanged (Property 5)
-  - [ ] 8.5 Test: `test_multiple_secrets_all_redacted` — two different secret patterns → both replaced
-  - [ ] 8.6 Test: `test_detection_list_length_matches_secret_count` — 2 secrets → `detections` list has 2 elements
-  - [ ] 8.7 Test: `test_kb_source_logs_error_with_corpus_and_entry_id` — `scrub(content, source="kb", corpus="cve_snapshot", entry_id="uuid")` with secret → ERROR log contains corpus and entry_id
-  - [ ] 8.8 Test: `test_empty_string_returns_empty_string_no_detections` — `scrub("")` → `("", [])`
-  - [ ] 8.9 Implement `pr_reviewer/components/secret_scrubber.py` — `SecretScrubber` with `scrub(content: str, source: str = "diff", corpus: str | None = None, entry_id: str | None = None) -> tuple[str, list[Detection]]`; uses `detect_secrets.SecretsCollection`; constructs new string, never mutates input
+- [x] 8. SecretScrubber
+  - [x] 8.1 Test: `test_aws_access_key_redacted` — string containing `AKIA...` → `[REDACTED]` in output
+  - [x] 8.2 Test: `test_github_token_redacted` — `ghp_...` token → `[REDACTED]`
+  - [x] 8.3 Test: `test_clean_content_returned_byte_for_byte_identical` — no secrets → `output == input` (Property 5)
+  - [x] 8.4 Test: `test_returns_new_string_not_in_place` — function is pure; input content unchanged (Property 5)
+  - [x] 8.5 Test: `test_multiple_secrets_all_redacted` — two different secret patterns → both replaced
+  - [x] 8.6 Test: `test_detection_list_length_matches_secret_count` — 2 secrets → `detections` list has 2 elements
+  - [x] 8.7 Test: `test_kb_source_logs_error_with_corpus_and_entry_id` — `scrub(content, source="kb", corpus="cve_snapshot", entry_id="uuid")` with secret → ERROR log contains corpus and entry_id
+  - [x] 8.8 Test: `test_empty_string_returns_empty_string_no_detections` — `scrub("")` → `("", [])`
+  - [x] 8.9 Implement `pr_reviewer/components/secret_scrubber.py` — `SecretScrubber` with `scrub(content: str, source: str = "diff", corpus: str | None = None, entry_id: str | None = None) -> tuple[str, list[Detection]]`; uses `detect_secrets.SecretsCollection`; constructs new string, never mutates input
   _Requirements: 3.6, 3.11, 9.7, 11.7_
 
 - [ ] 9. ConfigLoader
