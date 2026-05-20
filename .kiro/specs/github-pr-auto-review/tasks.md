@@ -53,20 +53,20 @@ Implement an LLM-backed GitHub PR review service in phases: v1 delivers the comp
   - [x] 4.12 Implement `pr_reviewer/store/github_client.py` — `GitHubAPIClient(installation_id: int, redis_client: Redis)` with methods: `get_access_token`, `get_diff`, `get_file_content`, `list_directory`, `get_symbol_usages`, `post_review`, `get_existing_reviews`, `compare_commits`, `get_branch_head_sha`
   _Requirements: 1.1, 1.5, 1.8, 1.9, 1.10, 1.11_
 
-- [ ] 5. WebhookReceiver
-  - [ ] 5.1 Test: `test_valid_hmac_returns_202` — signature computed from body with correct secret → 202 (Property 1)
-  - [ ] 5.2 Test: `test_missing_signature_header_returns_401` — no `X-Hub-Signature-256` → 401; body never touched (Property 1)
-  - [ ] 5.3 Test: `test_invalid_hmac_returns_401` — wrong secret → 401; body never deserialized (Property 1)
-  - [ ] 5.4 Test: `test_rate_limit_100_per_minute_returns_429` — 101 requests within 60s from same IP → 429
-  - [ ] 5.5 Test: `test_rate_limit_different_ips_have_separate_buckets` — 100 req from IP A + 1 from IP B → IP A returns 429, IP B is 202
-  - [ ] 5.6 Test: `test_pull_request_opened_enqueues_review_job` — `X-GitHub-Event: pull_request`, `action: opened` → task enqueued on `review_jobs`
-  - [ ] 5.7 Test: `test_pull_request_review_comment_enqueues_feedback_job` — routes to `feedback_jobs`
-  - [ ] 5.8 Test: `test_pull_request_review_event_enqueues_feedback_job` — `X-GitHub-Event: pull_request_review` → `feedback_jobs` (suggestion acceptance path)
-  - [ ] 5.9 Test: `test_draft_pr_not_enqueued_when_review_draft_prs_false` — payload `draft: true`, config `review_draft_prs: false` → no task enqueued, 202 returned
-  - [ ] 5.10 Test: `test_ack_time_under_3_seconds` — 202 returned before Celery task completes
-  - [ ] 5.11 Test: `test_queue_depth_gauge_incremented` — after enqueue, `review.queue_depth` gauge value is +1 from baseline
-  - [ ] 5.12 Test: `test_unsupported_event_returns_200_and_not_enqueued` — `X-GitHub-Event: ping` → 200, no task enqueued (note: `push` is handled in task 23)
-  - [ ] 5.13 Implement `pr_reviewer/api/webhook.py` — FastAPI router at `POST /webhook/github`; HMAC-SHA256 with constant-time compare; slowapi `Limiter` at 100 req/min per source IP; draft check; `review.queue_depth` gauge on enqueue
+- [x] 5. WebhookReceiver
+  - [x] 5.1 Test: `test_valid_hmac_returns_202` — signature computed from body with correct secret → 202 (Property 1)
+  - [x] 5.2 Test: `test_missing_signature_header_returns_401` — no `X-Hub-Signature-256` → 401; body never touched (Property 1)
+  - [x] 5.3 Test: `test_invalid_hmac_returns_401` — wrong secret → 401; body never deserialized (Property 1)
+  - [x] 5.4 Test: `test_rate_limit_100_per_minute_returns_429` — 101 requests within 60s from same IP → 429
+  - [x] 5.5 Test: `test_rate_limit_different_ips_have_separate_buckets` — 100 req from IP A + 1 from IP B → IP A returns 429, IP B is 202
+  - [x] 5.6 Test: `test_pull_request_opened_enqueues_review_job` — `X-GitHub-Event: pull_request`, `action: opened` → task enqueued on `review_jobs`
+  - [x] 5.7 Test: `test_pull_request_review_comment_enqueues_feedback_job` — routes to `feedback_jobs`
+  - [x] 5.8 Test: `test_pull_request_review_event_enqueues_feedback_job` — `X-GitHub-Event: pull_request_review` → `feedback_jobs` (suggestion acceptance path)
+  - [x] 5.9 Test: `test_draft_pr_not_enqueued_when_review_draft_prs_false` — payload `draft: true`, config `review_draft_prs: false` → no task enqueued, 202 returned
+  - [x] 5.10 Test: `test_ack_time_under_3_seconds` — 202 returned before Celery task completes
+  - [x] 5.11 Test: `test_queue_depth_gauge_incremented` — after enqueue, `review.queue_depth` gauge value is +1 from baseline
+  - [x] 5.12 Test: `test_unsupported_event_returns_200_and_not_enqueued` — `X-GitHub-Event: ping` → 200, no task enqueued (note: `push` is handled in task 23)
+  - [x] 5.13 Implement `pr_reviewer/api/webhook.py` — FastAPI router at `POST /webhook/github`; HMAC-SHA256 with constant-time compare; slowapi `Limiter` at 100 req/min per source IP; draft check; `review.queue_depth` gauge on enqueue
   _Requirements: 1.2, 1.3, 1.4, 1.14_
 
 - [ ] 6. JobQueue
