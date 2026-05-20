@@ -39,11 +39,9 @@ celery_app.conf.update(
         "pr_reviewer.workers.tasks.process_feedback_job": {"queue": "feedback_jobs"},
         "pr_reviewer.workers.indexer.run_index_refresh_task": {"queue": "indexer_jobs"},
     },
-    worker_concurrency={
-        "review_jobs": REVIEW_JOBS_CONCURRENCY,
-        "feedback_jobs": FEEDBACK_JOBS_CONCURRENCY,
-        "indexer_jobs": INDEXER_JOBS_CONCURRENCY,
-    },
+    # Per-queue concurrency is set via --concurrency on each worker process;
+    # worker_concurrency must be an int, not a per-queue dict.
+    worker_concurrency=REVIEW_JOBS_CONCURRENCY,
 )
 
 
