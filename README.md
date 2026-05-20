@@ -355,7 +355,7 @@ The service is a single FastAPI application with Celery workers. See [`.kiro/spe
 ./launch --no-tunnel
 ```
 
-Each run automatically kills the previous session (app processes, ngrok) before starting fresh — no manual cleanup needed. Logs are written to `logs/` — `api.log`, `worker-review.log`, `worker-feedback.log`, `ngrok.log`.
+Each run automatically kills the previous session (app processes, ngrok) before starting fresh — no manual cleanup needed. Logs are written to `logs/` — `api.log`, `worker-review.log`, `worker-feedback.log`, `worker-indexer.log`, `beat.log`, `ngrok.log`.
 
 ```bash
 # Run tests

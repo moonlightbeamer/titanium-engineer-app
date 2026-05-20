@@ -250,6 +250,20 @@ info "Starting Celery worker — feedback_jobs…"
 APP_PIDS+=($!)
 echo $! >> "$PID_FILE"
 
+info "Starting Celery worker — indexer_jobs (concurrency 2)…"
+(cd "$SCRIPT_DIR" && uv run celery -A pr_reviewer.workers worker \
+  -Q indexer_jobs --concurrency 2 --loglevel info \
+  2>&1 | tee "$LOG_DIR/worker-indexer.log") &
+APP_PIDS+=($!)
+echo $! >> "$PID_FILE"
+
+info "Starting Celery Beat (scheduled tasks: nightly index refresh at 02:00 UTC)…"
+(cd "$SCRIPT_DIR" && uv run celery -A pr_reviewer.workers beat \
+  --loglevel info \
+  2>&1 | tee "$LOG_DIR/beat.log") &
+APP_PIDS+=($!)
+echo $! >> "$PID_FILE"
+
 sleep 2
 
 # ── Step 11: Health check ─────────────────────────────────────────────────────
@@ -315,7 +329,7 @@ echo -e "  ChromaDB         : ${BLUE}http://localhost:${CHROMADB_PORT}${NC}"
 if [[ "$NO_TUNNEL" == "false" ]]; then
   echo -e "  ngrok dashboard  : ${BLUE}http://localhost:4040${NC}"
 fi
-echo -e "  Logs             : ${BLUE}$LOG_DIR/${NC}"
+echo -e "  Logs             : ${BLUE}$LOG_DIR/${NC}  (api · worker-review · worker-feedback · worker-indexer · beat · ngrok)"
 echo ""
 echo -e "  Press ${BOLD}Ctrl+C${NC} to stop everything."
 echo ""

@@ -28,7 +28,7 @@ celery_app.conf.update(
     task_routes={
         "pr_reviewer.workers.tasks.process_review_job": {"queue": "review_jobs"},
         "pr_reviewer.workers.tasks.process_feedback_job": {"queue": "feedback_jobs"},
-        "pr_reviewer.workers.tasks.process_indexer_job": {"queue": "indexer_jobs"},
+        "pr_reviewer.workers.indexer.run_index_refresh_task": {"queue": "indexer_jobs"},
     },
     worker_concurrency={
         "review_jobs": REVIEW_JOBS_CONCURRENCY,
