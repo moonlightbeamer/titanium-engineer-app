@@ -209,25 +209,25 @@ Implement an LLM-backed GitHub PR review service in phases: v1 delivers the comp
   - [x] 15.9 Implement `pr_reviewer/workers/feedback_processor.py` — Celery task `process_feedback_job(event_type, payload)`; `_classify_signal`; `_extract_file_path_pattern`; `_extract_finding_category`
   _Requirements: 9.1, 9.2, 9.3, 9.4, 9.5, 9.6, 9.7_
 
-- [ ] 16. JobProcessor
-  - [ ] 16.1 Test: `test_review_job_completes_end_to_end` — all components mocked at I/O boundaries; job runs steps 1–13; review posted; `last_reviewed_sha` updated
-  - [ ] 16.2 Test: `test_incremental_diff_fetched_when_last_sha_exists` — `last_reviewed_sha="abc123"` → `compare_commits("abc123", "new_sha")` called
-  - [ ] 16.3 Test: `test_last_reviewed_sha_updated_only_on_success` — `CommentPoster.post` raises → DB not updated; retry uses full delta
-  - [ ] 16.4 Test: `test_existing_review_for_commit_sha_skips_job` — `get_existing_reviews` returns bot review for same SHA → job skipped; no `ReviewAgent.run`
-  - [ ] 16.5 Test: `test_min_severity_filter_applied_after_review` — `min_severity=medium`, ReviewAgent returns 1 high + 2 low → `CommentPoster.post` receives only 1 high
-  - [ ] 16.6 Test: `test_few_shot_examples_in_review_context` — returned signals passed as `context.few_shot_examples` to `ReviewAgent`
-  - [ ] 16.7 Test: `test_auth_error_marks_job_failed_no_retry` — `get_access_token` raises `AuthError` → `jobs.status = failed`; Celery does NOT retry
-  - [ ] 16.8 Test: `test_root_span_created_with_job_id` — OTel root span has `job_id` as attribute
-  - [ ] 16.9 Test: `test_review_duration_recorded_on_success` — successful job → `review.duration_ms` histogram has a value, status tag `"success"`
-  - [ ] 16.10 Test: `test_codebase_index_injected_into_review_context_when_enabled` — `config.codebase_index_enabled=True` and valid `CodebaseIndex` in DB → `ReviewAgent.run` receives `context.codebase_index` that is not None **[v2]**
-  - [ ] 16.11 Test: `test_codebase_index_not_injected_when_disabled` — `config.codebase_index_enabled=False` → `context.codebase_index == None` **[v2]**
-  - [ ] 16.12 Test: `test_no_index_in_db_does_not_fail_job` — `codebase_index_enabled=True` but no index row → job proceeds with `context.codebase_index=None`; no exception **[v2]**
-  - [ ] 16.13 Test: `test_stale_index_triggers_out_of_schedule_refresh` — `CodebaseIndex.commit_sha` is 501 commits behind HEAD → WARN logged; `run_index_refresh` task enqueued on `indexer_jobs` **[v2]**
-  - [ ] 16.14 Test: `test_stale_index_does_not_block_job` — stale index detected → job continues using stale index; `ReviewAgent.run` still called **[v2]**
-  - [ ] 16.15 Test: `test_multi_package_pr_injects_only_modified_package_sections` — PR modifies `packages/api/` and `packages/db/`; indexes for all 3 packages exist → only api and db sections injected **[v2]**
-  - [ ] 16.16 Test: `test_multi_package_injection_respects_token_limit` — combined index exceeds `index_max_tokens=8000` → packages with most changed files prioritised; total token count ≤ 8000; WARN logged **[v2]**
-  - [ ] 16.17 Test: `test_context_tokens_used_recorded_after_successful_job` — after job completes, `context_tokens_used` in DB is non-NULL integer > 0
-  - [ ] 16.18 Implement `pr_reviewer/workers/job_processor.py` — Celery task `process_review_job(job_id: UUID)`; executes steps 1–13 from JobProcessor design; auth error halts without retry; OTel root span; all metrics emitted
+- [x] 16. JobProcessor
+  - [x] 16.1 Test: `test_review_job_completes_end_to_end` — all components mocked at I/O boundaries; job runs steps 1–13; review posted; `last_reviewed_sha` updated
+  - [x] 16.2 Test: `test_incremental_diff_fetched_when_last_sha_exists` — `last_reviewed_sha="abc123"` → `compare_commits("abc123", "new_sha")` called
+  - [x] 16.3 Test: `test_last_reviewed_sha_updated_only_on_success` — `CommentPoster.post` raises → DB not updated; retry uses full delta
+  - [x] 16.4 Test: `test_existing_review_for_commit_sha_skips_job` — `get_existing_reviews` returns bot review for same SHA → job skipped; no `ReviewAgent.run`
+  - [x] 16.5 Test: `test_min_severity_filter_applied_after_review` — `min_severity=medium`, ReviewAgent returns 1 high + 2 low → `CommentPoster.post` receives only 1 high
+  - [x] 16.6 Test: `test_few_shot_examples_in_review_context` — returned signals passed as `context.few_shot_examples` to `ReviewAgent`
+  - [x] 16.7 Test: `test_auth_error_marks_job_failed_no_retry` — `get_access_token` raises `AuthError` → `jobs.status = failed`; Celery does NOT retry
+  - [x] 16.8 Test: `test_root_span_created_with_job_id` — OTel root span has `job_id` as attribute
+  - [x] 16.9 Test: `test_review_duration_recorded_on_success` — successful job → `review.duration_ms` histogram has a value, status tag `"success"`
+  - [x] 16.10 Test: `test_codebase_index_injected_into_review_context_when_enabled` — `config.codebase_index_enabled=True` and valid `CodebaseIndex` in DB → `ReviewAgent.run` receives `context.codebase_index` that is not None **[v2]**
+  - [x] 16.11 Test: `test_codebase_index_not_injected_when_disabled` — `config.codebase_index_enabled=False` → `context.codebase_index == None` **[v2]**
+  - [x] 16.12 Test: `test_no_index_in_db_does_not_fail_job` — `codebase_index_enabled=True` but no index row → job proceeds with `context.codebase_index=None`; no exception **[v2]**
+  - [x] 16.13 Test: `test_stale_index_triggers_out_of_schedule_refresh` — `CodebaseIndex.commit_sha` is 501 commits behind HEAD → WARN logged; `run_index_refresh` task enqueued on `indexer_jobs` **[v2]**
+  - [x] 16.14 Test: `test_stale_index_does_not_block_job` — stale index detected → job continues using stale index; `ReviewAgent.run` still called **[v2]**
+  - [x] 16.15 Test: `test_multi_package_pr_injects_only_modified_package_sections` — PR modifies `packages/api/` and `packages/db/`; indexes for all 3 packages exist → only api and db sections injected **[v2]**
+  - [x] 16.16 Test: `test_multi_package_injection_respects_token_limit` — combined index exceeds `index_max_tokens=8000` → packages with most changed files prioritised; total token count ≤ 8000; WARN logged **[v2]**
+  - [x] 16.17 Test: `test_context_tokens_used_recorded_after_successful_job` — after job completes, `context_tokens_used` in DB is non-NULL integer > 0
+  - [x] 16.18 Implement `pr_reviewer/workers/job_processor.py` — Celery task `process_review_job(job_id: UUID)`; executes steps 1–13 from JobProcessor design; auth error halts without retry; OTel root span; all metrics emitted
   _Requirements: 1.5, 1.6, 1.7, 1.8, 1.13, 5.10, 7.2, 7.4, 8.1, 8.2, 12.10, 12.11, 14.2, 14.4_
 
 - [ ] 17. Health check endpoint

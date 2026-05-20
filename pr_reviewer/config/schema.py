@@ -31,3 +31,5 @@ class Config(BaseModel):
     max_linter_files: int = 5
     mcp_servers: MCPServersConfig = Field(default_factory=MCPServersConfig)
     knowledge_base: KnowledgeBaseConfig = Field(default_factory=KnowledgeBaseConfig)
+    codebase_index_enabled: bool = False
+    index_max_tokens: int = 8000
