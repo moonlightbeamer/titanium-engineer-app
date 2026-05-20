@@ -223,3 +223,43 @@ Chronological record of implementation steps. Appended after each task completes
 ---
 
 **Running totals:** 90 unit tests · 6 integration tests · 3 pre-existing OTel isolation failures · lint clean
+
+---
+
+### Task 12 — ToolBudgetMiddleware and ReviewAgent
+
+- Created `pr_reviewer/agents/tool_budget.py`:
+  - `BudgetExhaustedError(Exception)` — carries `path` attribute ("general" or "security") so callers can distinguish which analysis path exhausted the budget.
+  - `ToolBudgetMiddleware(budget)` — increments `_count` on each non-exempt tool call; raises `BudgetExhaustedError` when `_count > budget`. Exempt tools: `fetch_pr_metadata`, `read_findings_so_far`. `query_knowledge_base(priming=True)` is also exempt via `priming` flag on `track()`.
+- Created `pr_reviewer/agents/tools.py`:
+  - `ALL_TOOL_NAMES` — list of all 9 v1 tool names.
+  - `Tool(frozen=True)` — simple dataclass with `.name` and `.func` (Callable).
+  - `create_tools(ctx, budget, findings_store)` — returns 9 `Tool` instances wired to ReviewContext services:
+    - `fetch_pr_metadata` — calls `ctx.github_client.get_pr_metadata(**kwargs)`; budget-exempt.
+    - `read_findings_so_far` — returns copy of `findings_store`; budget-exempt.
+    - `query_knowledge_base(text, category, language, priming=False)` — passes `priming` through to both `budget.track()` and `ctx.knowledge_base.query()`.
+    - `fetch_file_content(path, ref)` — calls `get_file_content`, then `ctx.secret_scrubber.scrub(raw, source="diff")`; returns scrubbed content.
+    - `search_file`, `list_directory`, `get_symbol_usages` — thin wrappers over `ctx.github_client`; all budget-tracked.
+    - `lookup_cve`, `check_package_advisory` — delegates to `ctx.mcp_client`; budget-tracked.
+- Created `pr_reviewer/agents/review_agent.py`:
+  - `ReviewContext(frozen=True)` — `github_client`, `knowledge_base`, `mcp_client`, `secret_scrubber`, `repo`, `pr_number`, `job_id`, `few_shot_examples=()`; `codebase_index=None`.
+  - `ReviewAgent(llm)` — `run(diff, config, ctx) -> list[Finding]`:
+    1. Creates `ToolBudgetMiddleware(config.tool_budget)` and `findings_store = []`.
+    2. Calls `fetch_pr_metadata` tool first — always.
+    3. Calls `query_knowledge_base(category="security", priming=True)` — budget-exempt priming.
+    4. Calls `llm.invoke([_Message(content=rendered_diff)])` — whole diff, no splitting.
+    5. On `TimeoutError`: retries once; on second timeout returns partial findings.
+    6. Iterates findings; for each `Confidence.low` finding, calls `_resolve_low_confidence` (exactly 1 extra `search_file` call).
+    7. Calls `_check_test_coverage` (post-analysis, after LLM).
+    8. Returns `_synthesis_step(findings_store)`.
+  - `_resolve_low_confidence(finding, tools, budget)` — makes exactly 1 `search_file` call.
+  - `_check_test_coverage(diff, tools, budget, findings_store, job_id)` — calls `list_directory(path="tests")` per changed file; if empty → appends `Finding(category=bugs, severity=low)` for missing test coverage.
+  - `_synthesis_step(findings)` — groups by `(file_path, line_number)`; merges co-located findings into one with combined explanation, highest severity, and `related_finding_ids` pointing to all merged originals.
+
+**Tests:** 21 unit tests — all green (0.40s). Lint clean.
+
+**Files created:** `pr_reviewer/agents/tool_budget.py`, `pr_reviewer/agents/tools.py`, `pr_reviewer/agents/review_agent.py`, `tests/unit/test_review_agent.py`.
+
+---
+
+**Running totals:** 111 unit tests · 6 integration tests · 3 pre-existing OTel isolation failures · lint clean

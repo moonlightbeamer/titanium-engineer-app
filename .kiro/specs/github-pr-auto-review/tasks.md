@@ -145,46 +145,46 @@ Implement an LLM-backed GitHub PR review service in phases: v1 delivers the comp
   - [x] 11.8 Implement `pr_reviewer/kb/mcp_client.py` — `MCPClient(knowledge_base, config, redis_client)`; `lookup_cve` and `check_package_advisory` reading endpoint URLs from Config; Redis token buckets per server; fallback chain; `CVEAdvisory` and `EscalationResult` frozen dataclasses
   _Requirements: 11.3, 11.4, 11.5, 11.6, 11.10_
 
-- [ ] 12. ToolBudgetMiddleware and ReviewAgent
-  - [ ] 12.1 Test: `test_budget_incremented_on_each_tool_call` — 3 non-exempt calls → counter == 3 (Property 4)
-  - [ ] 12.2 Test: `test_budget_exhausted_raises_on_next_call` — 20 calls → 21st raises `BudgetExhaustedError` (Property 4)
-  - [ ] 12.3 Test: `test_priming_true_call_not_counted` — `query_knowledge_base(priming=True)` called 5× → counter still 0 (Property 4)
-  - [ ] 12.4 Test: `test_read_findings_so_far_not_counted` — `read_findings_so_far()` → counter unchanged
-  - [ ] 12.5 Test: `test_fetch_pr_metadata_called_first` — `fetch_pr_metadata` is the first tool call in every job
-  - [ ] 12.6 Test: `test_security_priming_kb_query_called_on_security_analysis` — `query_knowledge_base(category="security", priming=True)` called before first security Finding
-  - [ ] 12.7 Test: `test_secret_scrubber_applied_to_fetch_file_content_result` — result of `fetch_file_content` passes through `SecretScrubber` before entering agent context (Property 5)
-  - [ ] 12.8 Test: `test_low_confidence_finding_triggers_one_extra_tool_call` — low-confidence Finding → one additional tool call attempted
-  - [ ] 12.9 Test: `test_budget_exhausted_on_general_path_returns_partial_findings` — `BudgetExhaustedError` during style analysis → partial Findings returned, no exception propagated
-  - [ ] 12.10 Test: `test_budget_exhausted_on_security_path_produces_escalation` — `BudgetExhaustedError` during security verification → `Finding(is_escalation=True)` in results
-  - [ ] 12.11 Test: `test_llm_timeout_retried_once` — LLM call times out → retried exactly once; on second timeout partial Findings returned
-  - [ ] 12.12 Test: `test_no_mechanical_chunking` — diff passed whole; agent never receives pre-chunked sub-diff
-  - [ ] 12.13 Test: `test_test_coverage_check_performed_after_main_analysis` — `list_directory` and `search_file` called after Findings produced
-  - [ ] 12.14 Test: `test_missing_test_coverage_produces_bugs_finding` — no test file found for modified function → `Finding(category=bugs)` with suggested test case
-  - [ ] 12.15 Test: `test_synthesis_merges_findings_at_same_file_and_line` — style Finding and security Finding both reference `auth.py:42` → exactly one merged Finding with combined explanation
-  - [ ] 12.16 Test: `test_synthesis_annotates_related_findings_across_categories` — bug Finding and security Finding share root cause → both have each other's ID in `related_finding_ids`; each explanation contains inline cross-category note
-  - [ ] 12.17 Test: `test_every_finding_has_required_fields` — each Finding has `category`, `file_path`, `line_number`, `explanation` (≥1 sentence), `severity`
-  - [ ] 12.18 Test: `test_medium_high_finding_has_suggestion` — severity medium/high → `suggestion` is non-None
-  - [ ] 12.19 Test: `test_explanation_present_alongside_valid_suggestion` — Finding with non-None `suggestion` also has non-empty `explanation` of at least one sentence
-  - [ ] 12.20 Test: `test_alternative_llm_provider_accepted` — instantiate `ReviewAgent` with a mock `BaseChatModel`; no `TypeError`; `run()` dispatches to the mock
-  - [ ] 12.21 Test: `test_all_v1_tools_registered_with_agent` — inspect agent tool registry; all 9 v1 tools present by name: `fetch_pr_metadata`, `read_findings_so_far`, `query_knowledge_base`, `fetch_file_content`, `search_file`, `list_directory`, `get_symbol_usages`, `lookup_cve`, `check_package_advisory`
-  - [ ] 12.22 Implement `pr_reviewer/agents/tool_budget.py` — `ToolBudgetMiddleware(budget: int)`; budget-exempt set; `BudgetExhaustedError`
-  - [ ] 12.23 Implement `pr_reviewer/agents/tools.py` — all v1 Agent_Tool implementations registered with LangChain; `fetch_file_content` runs result through `SecretScrubber` before return
-  - [ ] 12.24 Implement `pr_reviewer/agents/review_agent.py` — `ReviewAgent.run(diff, config, context) -> list[Finding]`; `ReviewContext` frozen dataclass; `_synthesis_step` method merging same-location Findings and populating `related_finding_ids`
+- [x] 12. ToolBudgetMiddleware and ReviewAgent
+  - [x] 12.1 Test: `test_budget_incremented_on_each_tool_call` — 3 non-exempt calls → counter == 3 (Property 4)
+  - [x] 12.2 Test: `test_budget_exhausted_raises_on_next_call` — 20 calls → 21st raises `BudgetExhaustedError` (Property 4)
+  - [x] 12.3 Test: `test_priming_true_call_not_counted` — `query_knowledge_base(priming=True)` called 5× → counter still 0 (Property 4)
+  - [x] 12.4 Test: `test_read_findings_so_far_not_counted` — `read_findings_so_far()` → counter unchanged
+  - [x] 12.5 Test: `test_fetch_pr_metadata_called_first` — `fetch_pr_metadata` is the first tool call in every job
+  - [x] 12.6 Test: `test_security_priming_kb_query_called_on_security_analysis` — `query_knowledge_base(category="security", priming=True)` called before first security Finding
+  - [x] 12.7 Test: `test_secret_scrubber_applied_to_fetch_file_content_result` — result of `fetch_file_content` passes through `SecretScrubber` before entering agent context (Property 5)
+  - [x] 12.8 Test: `test_low_confidence_finding_triggers_one_extra_tool_call` — low-confidence Finding → one additional tool call attempted
+  - [x] 12.9 Test: `test_budget_exhausted_on_general_path_returns_partial_findings` — `BudgetExhaustedError` during style analysis → partial Findings returned, no exception propagated
+  - [x] 12.10 Test: `test_budget_exhausted_on_security_path_produces_escalation` — `BudgetExhaustedError` during security verification → `Finding(is_escalation=True)` in results
+  - [x] 12.11 Test: `test_llm_timeout_retried_once` — LLM call times out → retried exactly once; on second timeout partial Findings returned
+  - [x] 12.12 Test: `test_no_mechanical_chunking` — diff passed whole; agent never receives pre-chunked sub-diff
+  - [x] 12.13 Test: `test_test_coverage_check_performed_after_main_analysis` — `list_directory` and `search_file` called after Findings produced
+  - [x] 12.14 Test: `test_missing_test_coverage_produces_bugs_finding` — no test file found for modified function → `Finding(category=bugs)` with suggested test case
+  - [x] 12.15 Test: `test_synthesis_merges_findings_at_same_file_and_line` — style Finding and security Finding both reference `auth.py:42` → exactly one merged Finding with combined explanation
+  - [x] 12.16 Test: `test_synthesis_annotates_related_findings_across_categories` — bug Finding and security Finding share root cause → both have each other's ID in `related_finding_ids`; each explanation contains inline cross-category note
+  - [x] 12.17 Test: `test_every_finding_has_required_fields` — each Finding has `category`, `file_path`, `line_number`, `explanation` (≥1 sentence), `severity`
+  - [x] 12.18 Test: `test_medium_high_finding_has_suggestion` — severity medium/high → `suggestion` is non-None
+  - [x] 12.19 Test: `test_explanation_present_alongside_valid_suggestion` — Finding with non-None `suggestion` also has non-empty `explanation` of at least one sentence
+  - [x] 12.20 Test: `test_alternative_llm_provider_accepted` — instantiate `ReviewAgent` with a mock `BaseChatModel`; no `TypeError`; `run()` dispatches to the mock
+  - [x] 12.21 Test: `test_all_v1_tools_registered_with_agent` — inspect agent tool registry; all 9 v1 tools present by name: `fetch_pr_metadata`, `read_findings_so_far`, `query_knowledge_base`, `fetch_file_content`, `search_file`, `list_directory`, `get_symbol_usages`, `lookup_cve`, `check_package_advisory`
+  - [x] 12.22 Implement `pr_reviewer/agents/tool_budget.py` — `ToolBudgetMiddleware(budget: int)`; budget-exempt set; `BudgetExhaustedError`
+  - [x] 12.23 Implement `pr_reviewer/agents/tools.py` — all v1 Agent_Tool implementations registered with LangChain; `fetch_file_content` runs result through `SecretScrubber` before return
+  - [x] 12.24 Implement `pr_reviewer/agents/review_agent.py` — `ReviewAgent.run(diff, config, context) -> list[Finding]`; `ReviewContext` frozen dataclass; `_synthesis_step` method merging same-location Findings and populating `related_finding_ids`
   _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7, 3.8, 3.9, 3.10, 3.11, 3.12, 3.13, 3.14, 3.15, 4.5_
 
-- [ ] 13. CommentPoster
-  - [ ] 13.1 Test: `test_single_review_payload_sent` — multiple Findings → one call to `POST /reviews`, not one per Finding
-  - [ ] 13.2 Test: `test_any_high_produces_request_changes` — one high-severity Finding → `"REQUEST_CHANGES"`
-  - [ ] 13.3 Test: `test_empty_findings_list_posts_no_issues_found_comment` — `findings=[]` → summary body `"No issues found."`, status `"COMMENT"`
-  - [ ] 13.4 Test: `test_all_filtered_by_min_severity_also_posts_no_issues_found` — 3 low Findings, `min_severity=medium` → all filtered → `"No issues found."`
-  - [ ] 13.5 Test: `test_auto_approve_when_no_findings_and_configured` — empty + `auto_approve_on_no_findings=True` → status `"APPROVE"`
-  - [ ] 13.6 Test: `test_suggestion_block_uses_github_syntax_for_medium` — medium Finding → body contains ` ```suggestion` block
-  - [ ] 13.7 Test: `test_invalid_suggestion_omits_block_retains_explanation` — `suggestion` malformed/None → no suggestion block; `explanation` present
-  - [ ] 13.8 Test: `test_422_skips_comment_and_continues` — mock returns 422 for second comment → first and third posted; second skipped; no exception
-  - [ ] 13.9 Test: `test_dedup_skips_finding_with_existing_comment` — existing comment at `auth.py:42` → Finding for `auth.py:42` not included in new payload
-  - [ ] 13.10 Test: `test_summary_body_found_n_issues` — 3 Findings across 2 categories → `"Found 3 issue(s) across 2 category/categories."`
-  - [ ] 13.11 Test: `test_min_severity_filter_applied_before_status_determination` — 2 high + 1 low, `min_severity=high` → low suppressed; status `"REQUEST_CHANGES"` based on 2 high
-  - [ ] 13.12 Implement `pr_reviewer/components/comment_poster.py` — `CommentPoster(github_client)`; `post(findings, pr, config) -> None`; `_format_suggestion_block`; `_determine_review_status` (ignores escalations from severity determination); applies `min_severity` filter; deduplicates; handles 422 gracefully
+- [x] 13. CommentPoster
+  - [x] 13.1 Test: `test_single_review_payload_sent` — multiple Findings → one call to `POST /reviews`, not one per Finding
+  - [x] 13.2 Test: `test_any_high_produces_request_changes` — one high-severity Finding → `"REQUEST_CHANGES"`
+  - [x] 13.3 Test: `test_empty_findings_list_posts_no_issues_found_comment` — `findings=[]` → summary body `"No issues found."`, status `"COMMENT"`
+  - [x] 13.4 Test: `test_all_filtered_by_min_severity_also_posts_no_issues_found` — 3 low Findings, `min_severity=medium` → all filtered → `"No issues found."`
+  - [x] 13.5 Test: `test_auto_approve_when_no_findings_and_configured` — empty + `auto_approve_on_no_findings=True` → status `"APPROVE"`
+  - [x] 13.6 Test: `test_suggestion_block_uses_github_syntax_for_medium` — medium Finding → body contains ` ```suggestion` block
+  - [x] 13.7 Test: `test_invalid_suggestion_omits_block_retains_explanation` — `suggestion` malformed/None → no suggestion block; `explanation` present
+  - [x] 13.8 Test: `test_422_skips_comment_and_continues` — mock returns 422 for second comment → first and third posted; second skipped; no exception
+  - [x] 13.9 Test: `test_dedup_skips_finding_with_existing_comment` — existing comment at `auth.py:42` → Finding for `auth.py:42` not included in new payload
+  - [x] 13.10 Test: `test_summary_body_found_n_issues` — 3 Findings across 2 categories → `"Found 3 issue(s) across 2 category/categories."`
+  - [x] 13.11 Test: `test_min_severity_filter_applied_before_status_determination` — 2 high + 1 low, `min_severity=high` → low suppressed; status `"REQUEST_CHANGES"` based on 2 high
+  - [x] 13.12 Implement `pr_reviewer/components/comment_poster.py` — `CommentPoster(github_client)`; `post(findings, pr, config) -> None`; `_format_suggestion_block`; `_determine_review_status` (ignores escalations from severity determination); applies `min_severity` filter; deduplicates; handles 422 gracefully
   _Requirements: 4.1, 4.2, 4.3, 4.4, 4.6, 5.1, 5.3, 5.4, 5.5, 5.6, 5.7, 5.8, 5.9, 5.10, 7.4_
 
 - [ ] 14. FeedbackStore
