@@ -1,12 +1,16 @@
 """FastAPI application factory."""
 
 from fastapi import FastAPI
-from fastapi.responses import JSONResponse
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
+from pr_reviewer.api.health import create_health_router
 from pr_reviewer.api.webhook import limiter
 from pr_reviewer.api.webhook import router as webhook_router
+
+
+def _noop() -> None:
+    pass
 
 
 def build_app() -> FastAPI:
@@ -14,11 +18,8 @@ def build_app() -> FastAPI:
     app.state.limiter = limiter
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
     app.include_router(webhook_router)
-
-    @app.get("/health")
-    async def health() -> JSONResponse:
-        return JSONResponse({"status": "ok"})
-
+    # Health: wire real probes via env at startup; noops keep the app runnable
+    app.include_router(create_health_router(_noop, _noop, _noop))
     return app
 
 

@@ -11,6 +11,20 @@ from pr_reviewer.models.finding import Finding
 from pr_reviewer.models.job import Job
 
 
+def _make_index(**kwargs):
+    """Build a CodebaseIndex with required fields for v2 tests."""
+    from pr_reviewer.models.codebase_index import CodebaseIndex, IndexScope
+    defaults = {
+        "id": uuid.uuid4(),
+        "repo_id": "org/repo",
+        "commit_sha": "abc123",
+        "scope": IndexScope.single,
+        "content": "arch summary",
+    }
+    defaults.update(kwargs)
+    return CodebaseIndex(**defaults)
+
+
 def _job(
     *,
     last_reviewed_sha: str | None = None,
@@ -292,9 +306,8 @@ def test_context_tokens_used_recorded_after_successful_job():
 def test_codebase_index_injected_into_review_context_when_enabled():
     """codebase_index_enabled=True + valid index in store → ctx.codebase_index is not None."""
     from pr_reviewer.config.schema import Config
-    from pr_reviewer.models.codebase_index import CodebaseIndex
 
-    index = CodebaseIndex(repo_id="org/repo", commit_sha="abc123", content="arch summary")
+    index = _make_index()
     store = MagicMock()
     store.get_all.return_value = [index]
 
@@ -354,9 +367,8 @@ def test_no_index_in_db_does_not_fail_job():
 def test_stale_index_triggers_out_of_schedule_refresh():
     """Index 501 commits behind HEAD → WARN + run_index_refresh enqueued on indexer_jobs."""
     from pr_reviewer.config.schema import Config
-    from pr_reviewer.models.codebase_index import CodebaseIndex
 
-    index = CodebaseIndex(repo_id="org/repo", commit_sha="old_sha", content="summary")
+    index = _make_index(commit_sha="old_sha", content="summary")
     store = MagicMock()
     store.get_all.return_value = [index]
 
@@ -384,9 +396,8 @@ def test_stale_index_triggers_out_of_schedule_refresh():
 def test_stale_index_does_not_block_job():
     """Stale index detected → job continues; ReviewAgent.run still called with index."""
     from pr_reviewer.config.schema import Config
-    from pr_reviewer.models.codebase_index import CodebaseIndex
 
-    index = CodebaseIndex(repo_id="org/repo", commit_sha="old_sha", content="summary")
+    index = _make_index(commit_sha="old_sha", content="summary")
     store = MagicMock()
     store.get_all.return_value = [index]
 
@@ -409,20 +420,11 @@ def test_stale_index_does_not_block_job():
 def test_multi_package_pr_injects_only_modified_package_sections():
     """PR modifies packages/api and packages/db; auth index excluded."""
     from pr_reviewer.config.schema import Config
-    from pr_reviewer.models.codebase_index import CodebaseIndex
+    from pr_reviewer.models.codebase_index import IndexScope
 
-    api_index = CodebaseIndex(
-        repo_id="org/repo", commit_sha="abc", content="api content",
-        package_path="packages/api",
-    )
-    db_index = CodebaseIndex(
-        repo_id="org/repo", commit_sha="abc", content="db content",
-        package_path="packages/db",
-    )
-    auth_index = CodebaseIndex(
-        repo_id="org/repo", commit_sha="abc", content="auth content",
-        package_path="packages/auth",
-    )
+    api_index = _make_index(commit_sha="abc", content="api content", scope=IndexScope.monorepo, package_path="packages/api")
+    db_index = _make_index(commit_sha="abc", content="db content", scope=IndexScope.monorepo, package_path="packages/db")
+    auth_index = _make_index(commit_sha="abc", content="auth content", scope=IndexScope.monorepo, package_path="packages/auth")
     store = MagicMock()
     store.get_all.return_value = [api_index, db_index, auth_index]
 
@@ -456,15 +458,10 @@ def test_multi_package_injection_respects_token_limit():
     from pr_reviewer.models.codebase_index import CodebaseIndex
 
     # 20_000 chars ≈ 5_000 tokens each; combined 10_000 > 8_000 limit
+    from pr_reviewer.models.codebase_index import IndexScope
     big_content = "x" * 20_000
-    api_index = CodebaseIndex(
-        repo_id="org/repo", commit_sha="abc", content=big_content,
-        package_path="packages/api",
-    )
-    db_index = CodebaseIndex(
-        repo_id="org/repo", commit_sha="abc", content=big_content,
-        package_path="packages/db",
-    )
+    api_index = _make_index(commit_sha="abc", content=big_content, scope=IndexScope.monorepo, package_path="packages/api")
+    db_index = _make_index(commit_sha="abc", content=big_content, scope=IndexScope.monorepo, package_path="packages/db")
     store = MagicMock()
     store.get_all.return_value = [api_index, db_index]
 

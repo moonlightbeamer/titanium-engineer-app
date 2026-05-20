@@ -319,3 +319,57 @@ Chronological record of implementation steps. Appended after each task completes
 ---
 
 **Running totals:** 133 unit tests · 6 integration tests · 3 pre-existing OTel isolation failures · lint clean
+
+---
+
+### Task 16 — JobProcessor (16.1–16.18, including v2 sub-tasks 16.10–16.16)
+
+- Created `pr_reviewer/workers/job_processor.py`:
+  - `JobProcessor` class orchestrating steps 1–13 of the full review pipeline:
+    1. Load config via `ConfigLoader`
+    2. Check for existing bot review on same commit SHA — skip if found
+    3. Fetch diff (incremental via `compare_commits` when `last_reviewed_sha` is set, otherwise full diff)
+    4. Parse diff via `DiffParser`
+    5. Fetch few-shot feedback signals from `FeedbackStore`
+    6. Load codebase index (v2, see below)
+    7. Build `ReviewContext` (frozen) and run `ReviewAgent`
+    8. Apply `min_severity` filter
+    9. Post comments via `CommentPoster`
+    10. Persist success: call `update_success(job_id, commit_sha, context_tokens_used)`
+  - `AuthError` caught at top level → `update_status(failed)`; does not propagate (no Celery retry).
+  - OTel root span `review.job` opened with `job_id` attribute; `review.duration_ms` histogram recorded with `status` tag on both success and auth-error paths.
+- **v2 sub-tasks (16.10–16.16)** — codebase index injection:
+  - Added `codebase_index_enabled: bool = False` and `index_max_tokens: int = 8000` to `Config`.
+  - Created minimal `pr_reviewer/models/codebase_index.py` stub with `CodebaseIndex` frozen dataclass and `IndexScope` enum (later extended to full model by task 22).
+  - `_load_codebase_index(job, diff, config)` — disabled when `codebase_index_enabled=False`; returns `None` when store is absent or returns empty list; graceful: missing index never blocks the job.
+  - `_is_stale(index, job)` — calls `get_branch_head_sha` + `get_commit_distance`; returns `True` when distance > 500 commits; logs WARN + enqueues `run_index_refresh` on `indexer_jobs` (injected via `index_refresh_task` param); job continues with stale index rather than blocking.
+  - `_select_indexes(diff, indexes, config)` — multi-package: filters indexes whose `package_path` is a prefix of any changed filename; falls back to all indexes when no package paths present.
+  - `_apply_token_limit(indexes, diff, max_tokens)` — greedy include in descending changed-file-count order; logs WARN when packages are omitted; total tokens never exceeds `index_max_tokens`.
+- **Fix encountered:** `CodebaseIndex` stub created with no required fields; when the v2-codebase-index-agent later added `id: UUID` and `scope: IndexScope` as required fields, the test helpers broke. Fixed by introducing `_make_index(**kwargs)` factory in the test file that supplies defaults for all required fields.
+
+**Tests:** 17 unit tests — all green. Lint clean.
+
+**Files created:** `pr_reviewer/workers/job_processor.py`, `pr_reviewer/models/codebase_index.py`, `tests/unit/test_job_processor.py`. **Modified:** `pr_reviewer/config/schema.py`.
+
+---
+
+**Running totals:** 150 unit tests · 6 integration tests · 3 pre-existing OTel isolation failures · lint clean
+
+---
+
+### Task 17 — Health check endpoint
+
+- Replaced the stub `GET /health` in `main.py` with a proper health check router factory.
+- Created `pr_reviewer/api/health.py`:
+  - `create_health_router(db_probe, redis_probe, chromadb_probe) -> APIRouter` — factory accepting callables so production wiring and test mocking are fully decoupled.
+  - `GET /health` — calls each probe independently inside `try/except`; sets `"ok"` or `"error"` per dependency; top-level `"status"` field is `"ok"` only when all three pass; returns HTTP 200 on all-ok, 503 otherwise.
+  - Production probe factories: `make_db_probe(engine)` → `SELECT 1`; `make_redis_probe(redis_client)` → `PING`; `make_chromadb_probe(url)` → `GET /api/v1/heartbeat` via `httpx`.
+- Updated `pr_reviewer/api/main.py` to include the health router (noop probes at boot; real probes wired at startup time from env/config).
+
+**Tests:** 4 unit tests — all green (0.10s). Lint clean.
+
+**Files created:** `pr_reviewer/api/health.py`, `tests/unit/test_health.py`. **Modified:** `pr_reviewer/api/main.py`.
+
+---
+
+**Running totals:** 154 unit tests · 6 integration tests · 3 pre-existing OTel isolation failures · lint clean
