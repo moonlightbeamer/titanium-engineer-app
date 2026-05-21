@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import ssl
 import urllib.parse
 
 from redis import Redis
@@ -54,9 +55,11 @@ class WorkerContainer:
 
     def __init__(self) -> None:
         self._engine = get_engine()
+        _redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
         self._redis = Redis.from_url(
-            os.getenv("REDIS_URL", "redis://localhost:6379/0"),
+            _redis_url,
             decode_responses=True,
+            **({ "ssl_cert_reqs": ssl.CERT_NONE } if _redis_url.startswith("rediss://") else {}),
         )
         self.job_store = JobStore(self._engine)
         self._feedback_store = FeedbackStore(self._engine)

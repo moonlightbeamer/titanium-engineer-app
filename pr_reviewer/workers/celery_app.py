@@ -1,6 +1,7 @@
 """Celery application with queue configuration and dead-letter handling."""
 
 import os
+import ssl
 from typing import Any
 
 from dotenv import load_dotenv
@@ -81,10 +82,13 @@ def _handle_task_failure(
     try:
         from redis import Redis  # noqa: PLC0415
 
+        _redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
         client = GitHubAPIClient(
             installation_id=installation_id,
             redis_client=Redis.from_url(
-                os.getenv("REDIS_URL", "redis://localhost:6379/0"), decode_responses=True
+                _redis_url,
+                decode_responses=True,
+                **({ "ssl_cert_reqs": ssl.CERT_NONE } if _redis_url.startswith("rediss://") else {}),
             ),
             app_id=os.environ["GITHUB_APP_ID"],
             private_key=os.environ["GITHUB_APP_PRIVATE_KEY"],
