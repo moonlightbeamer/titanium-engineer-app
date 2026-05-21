@@ -5,8 +5,21 @@ from __future__ import annotations
 import os
 import ssl
 import urllib.parse
+from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 from redis import Redis
+
+
+def _make_redis_client(url: str, **kwargs) -> Redis:
+    """Create a Redis client, stripping ssl_cert_reqs from the URL and passing it
+    as ssl.CERT_NONE kwarg so redis-py 5.x string validation is bypassed."""
+    if url.startswith("rediss://"):
+        parsed = urlparse(url)
+        params = {k: v for k, v in parse_qs(parsed.query, keep_blank_values=True).items()
+                  if k != "ssl_cert_reqs"}
+        url = urlunparse(parsed._replace(query=urlencode(params, doseq=True)))
+        kwargs.setdefault("ssl_cert_reqs", ssl.CERT_NONE)
+    return Redis.from_url(url, **kwargs)
 
 from pr_reviewer.agents.llm import make_llm
 from pr_reviewer.agents.review_agent import ReviewAgent
@@ -55,11 +68,9 @@ class WorkerContainer:
 
     def __init__(self) -> None:
         self._engine = get_engine()
-        _redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-        self._redis = Redis.from_url(
-            _redis_url,
+        self._redis = _make_redis_client(
+            os.getenv("REDIS_URL", "redis://localhost:6379/0"),
             decode_responses=True,
-            **({ "ssl_cert_reqs": ssl.CERT_NONE } if _redis_url.startswith("rediss://") else {}),
         )
         self.job_store = JobStore(self._engine)
         self._feedback_store = FeedbackStore(self._engine)

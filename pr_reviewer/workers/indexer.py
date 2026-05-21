@@ -277,12 +277,8 @@ def _run_index_refresh(
 
     if redis_client is None:
         import redis as _redis
-        import ssl as _ssl
-        _redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-        redis_client = _redis.from_url(
-            _redis_url,
-            **({ "ssl_cert_reqs": _ssl.CERT_NONE } if _redis_url.startswith("rediss://") else {}),
-        )
+        from pr_reviewer.workers.container import _make_redis_client  # noqa: PLC0415
+        redis_client = _make_redis_client(os.getenv("REDIS_URL", "redis://localhost:6379/0"))
 
     if config is None:
         from pr_reviewer.config.loader import ConfigLoader
