@@ -1,7 +1,7 @@
 resource "azurerm_postgresql_flexible_server" "main" {
-  name                   = "psql-${local.prefix}"
+  name                   = "psql2-${local.prefix}"
   resource_group_name    = data.azurerm_resource_group.main.name
-  location               = local.location
+  location               = "eastus2"
   version                = "16"
   administrator_login    = var.db_admin_user
   administrator_password = var.db_admin_password

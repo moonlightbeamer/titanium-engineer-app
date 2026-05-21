@@ -404,6 +404,15 @@ def cmd_bootstrap(obj: dict) -> None:
                 corpus_versions[corpus] = (row or 0) + 1
         for seed in all_seeds:
             corpus = seed["corpus"]
+            already = conn.execute(
+                text(
+                    "SELECT 1 FROM knowledge_base_entries "
+                    "WHERE corpus=:corpus AND content=:content LIMIT 1"
+                ),
+                {"corpus": corpus, "content": seed["content"]},
+            ).scalar()
+            if already:
+                continue
             version = corpus_versions[corpus]
             corpus_versions[corpus] += 1
             conn.execute(
@@ -432,7 +441,8 @@ def cmd_bootstrap(obj: dict) -> None:
             )
             inserted += 1
         conn.commit()
-    click.echo(f"Bootstrapped {inserted} entries")
+    skipped = len(all_seeds) - inserted
+    click.echo(f"Bootstrapped {inserted} entries ({skipped} already present, skipped)")
 
 
 @kb.command("sync")

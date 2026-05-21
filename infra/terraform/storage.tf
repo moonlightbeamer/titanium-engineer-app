@@ -12,45 +12,26 @@ resource "azurerm_storage_account" "chroma" {
   account_tier             = "Standard"
   account_replication_type = "LRS"
   min_tls_version          = "TLS1_2"
+
+  network_rules {
+    default_action = "Deny"
+    bypass         = ["AzureServices"]
+    ip_rules       = ["52.191.238.235", "172.178.57.93"]
+  }
 }
 
-resource "azurerm_storage_share" "chroma" {
-  name                 = "chromadb-data"
-  storage_account_name = azurerm_storage_account.chroma.name
-  quota                = 50
-}
-
-# ── OTel Collector config ─────────────────────────────────────────────────────
-
-resource "azurerm_storage_share" "otel" {
-  name                 = "otel-config"
-  storage_account_name = azurerm_storage_account.chroma.name
-  quota                = 1
-}
-
-resource "azurerm_storage_share_file" "otel_config" {
-  name             = "config.yml"
-  storage_share_id = azurerm_storage_share.otel.id
-  source           = "${path.module}/../../otel/collector-config.yml"
-}
-
-resource "azurerm_container_app_environment_storage" "otel" {
-  name                         = "otel-config-storage"
-  container_app_environment_id = azurerm_container_app_environment.main.id
-  account_name                 = azurerm_storage_account.chroma.name
-  share_name                   = azurerm_storage_share.otel.name
-  access_key                   = azurerm_storage_account.chroma.primary_access_key
-  access_mode                  = "ReadOnly"
-}
+# Shares are pre-created via ARM (az storage share-rm create) to bypass the
+# data-plane network restriction in azurerm v3.x.
+# chromadb-data (quota 50 GiB) and otel-config (quota 1 GiB) exist in
+# stchroma${random_string.storage_suffix.result}.
 
 # ── ChromaDB data ─────────────────────────────────────────────────────────────
 
-# Mount the file share into the ACA environment so container apps can use it
 resource "azurerm_container_app_environment_storage" "chroma" {
   name                         = "chromadb-storage"
   container_app_environment_id = azurerm_container_app_environment.main.id
   account_name                 = azurerm_storage_account.chroma.name
-  share_name                   = azurerm_storage_share.chroma.name
+  share_name                   = "chromadb-data"
   access_key                   = azurerm_storage_account.chroma.primary_access_key
   access_mode                  = "ReadWrite"
 }

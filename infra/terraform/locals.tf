@@ -10,7 +10,7 @@ locals {
   db_url = "postgresql://${local.db_user}:${urlencode(var.db_admin_password)}@${azurerm_postgresql_flexible_server.main.fqdn}:5432/${local.db_name}?sslmode=require"
 
   # Azure Cache for Redis only exposes SSL on port 6380; key is base64-encoded so urlencode() is required
-  redis_url = "rediss://:${urlencode(azurerm_redis_cache.main.primary_access_key)}@${azurerm_redis_cache.main.hostname}:${azurerm_redis_cache.main.ssl_port}/0"
+  redis_url = "rediss://:${urlencode(azurerm_redis_cache.main.primary_access_key)}@${azurerm_redis_cache.main.hostname}:${azurerm_redis_cache.main.ssl_port}/0?ssl_cert_reqs=none"
 
   # ChromaDB runs as an internal ACA app; port 80 is the ACA ingress layer that
   # proxies to the container's target_port (8000). Include :80 explicitly so

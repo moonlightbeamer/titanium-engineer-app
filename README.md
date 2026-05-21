@@ -2,16 +2,34 @@
 
 An LLM-backed bot that automatically reviews GitHub pull requests and posts inline code comments with categorised findings — bugs, security issues, style violations, and performance problems. Includes corrected code suggestions developers can apply with one click.
 
-## Deployment
+## Installing the bot on your repository
 
-The service runs in two modes — both use the same codebase and the same GitHub App:
+The bot is already deployed and running at:
+
+```
+https://ca-pr-reviewer-api.blackmoss-99d6e960.eastus.azurecontainerapps.io
+```
+
+To add it to a repository:
+
+1. Go to the GitHub App page: **[https://github.com/apps/pr-review-titanium-engineer](https://github.com/apps/pr-review-titanium-engineer)**
+2. Click **Install** → select the account or organisation → choose **Only select repositories** → pick the repo → **Install**
+3. Open a pull request — the bot reviews it automatically within 10 minutes.
+
+That's all. No deployment, no secrets, no configuration required.
+
+> **Optional per-repo config:** Add `.github/pr-auto-review.yml` to customise which categories are enabled, minimum severity, draft PR handling, and more. See [Per-repository configuration](#per-repository-configuration) below.
+
+---
+
+## Deployment modes
 
 | Mode | Command | When to use |
 |---|---|---|
-| **Local** | `./launch` | Development, testing, trying it out — everything runs on your machine via docker-compose; cloudflared tunnels GitHub webhooks to localhost |
-| **Azure** | `./infra/scripts/deploy.sh` | Production — Azure Container Apps, managed PostgreSQL, Redis, and ChromaDB; stable webhook URL; no cloudflared needed |
+| **Local** | `./launch` | Development, testing — everything runs on your machine via docker-compose; cloudflared tunnels GitHub webhooks to localhost |
+| **Azure** | `./infra/scripts/deploy.sh` | Self-hosting — Azure Container Apps, managed PostgreSQL, Redis, and ChromaDB; stable webhook URL; no cloudflared needed |
 
-The two modes are independent. Switch between them freely — no code changes required.
+The two modes are independent and use the same codebase.
 
 ---
 
@@ -151,9 +169,11 @@ To verify the webhook is firing: check `logs/cloudflared.log` or watch `logs/api
 
 ---
 
-## Deploying to Azure (production)
+## Deploying to Azure (self-hosting)
 
-The Azure deployment targets **Azure Container Apps** with managed PostgreSQL, Redis, and ChromaDB, all provisioned by Terraform. The GitHub App webhook URL is stable (no cloudflared needed).
+Follow this section only if you want to run your own instance. The bot is already deployed and available — most users should just [install the GitHub App](#installing-the-bot-on-your-repository) instead.
+
+The Azure deployment targets **Azure Container Apps** with managed PostgreSQL, Redis, and ChromaDB, all provisioned by Terraform.
 
 ### Prerequisites
 
@@ -165,16 +185,20 @@ The Azure deployment targets **Azure Container Apps** with managed PostgreSQL, R
 
 ### Step 1 — Create a GitHub App (one-time)
 
-Follow the same GitHub App setup as the local instructions above, with one difference:
+Follow the same GitHub App setup as the local instructions above, with these differences:
 
 | Field | Value |
 |---|---|
-| Homepage URL | `https://<your-api-fqdn>` (fill in after deploy) |
+| GitHub App name | anything, e.g. `pr-reviewer-myorg` |
+| Homepage URL | `https://<your-api-fqdn>` (fill in after first deploy) |
 | Webhook URL | leave blank — fill in after first deploy |
+| Where can this GitHub App be installed? | **Any account** (to allow other users to install it) |
+
+After creating the app, note the **App ID** and generate + download a **private key**.
 
 ### Step 2 — Bootstrap Terraform state storage (one-time)
 
-Creates the Azure Storage account that holds Terraform state. Run once only.
+Creates the Azure Storage account that holds Terraform state. Run once per environment.
 
 ```bash
 az login
@@ -183,10 +207,10 @@ az login
 
 ### Step 3 — Populate secrets
 
-Fill in `infra/scripts/set-secrets.sh` (gitignored). Most values are already pre-populated from `.env`.
+Fill in `infra/scripts/set-secrets.sh` (gitignored) with your GitHub App credentials, Azure OpenAI keys, and database password.
 
 ```bash
-# Open the file and verify all values are correct before deploying
+# Open the file and fill in all values before deploying
 open infra/scripts/set-secrets.sh
 ```
 
@@ -197,9 +221,9 @@ podman machine start
 ./infra/scripts/deploy.sh
 ```
 
-That's it. The script builds the image, pushes it to ACR, runs `terraform plan`, and applies. The image tag defaults to the current git short SHA.
+The script builds the Docker image, pushes it to ACR, runs `terraform plan`, and applies. The image tag defaults to the current git short SHA.
 
-The first deploy takes ~10 minutes (PostgreSQL and Redis provisioning). Subsequent deploys take under 2 minutes.
+First deploy takes ~10 minutes (PostgreSQL and Redis provisioning). Subsequent deploys take under 2 minutes.
 
 At the end you'll see:
 
@@ -233,37 +257,36 @@ ChromaDB starts empty. Run the seed job to populate the CVE snapshot and all KB 
 az containerapp job start --name job-pr-reviewer-kb-seed --resource-group titanium-team-03-rg
 ```
 
-Or use `--seed` in the deploy command to do it automatically. Monitor progress:
+Or pass `--seed` to the deploy command to do it automatically. Monitor progress:
 
 ```bash
 az containerapp job execution list --name job-pr-reviewer-kb-seed --resource-group titanium-team-03-rg -o table
 ```
 
-Re-run this command whenever you want to refresh the CVE snapshot.
+Re-run any time to refresh the CVE snapshot.
 
-### Step 6 — Wire the webhook URL into GitHub
+### Step 6 — Wire the webhook URL into your GitHub App
 
 1. Copy the webhook URL printed at the end of the deploy script
-2. Go to: **GitHub → Settings → Developer settings → GitHub Apps → Edit**
-3. Set **Webhook URL** to the printed value → **Save changes**
+2. Go to: **GitHub → Settings → Developer settings → GitHub Apps → your app → Edit**
+3. Set **Webhook URL** to the printed URL → **Save changes**
 
-Unlike the local setup, this URL is **permanent** — it does not change on restart.
+This URL is **permanent** — it does not change on redeploy or restart, unlike the cloudflared local URL.
 
-### Step 7 — Install the app on a repository
+### Step 7 — Install the app on repositories
 
-Same as the local instructions: **GitHub App → Install App → select repository → Install**.
+Go to your GitHub App settings → **Install App** → select account/org → choose repositories → **Install**.
+
+To allow anyone to install it: in the GitHub App settings under **Advanced**, set **Where can this GitHub App be installed?** to **Any account** and save. Users can then install via `https://github.com/apps/<your-app-slug>`.
 
 ### Re-deploying after a code change
 
 ```bash
-./infra/scripts/deploy.sh
+./infra/scripts/deploy.sh                  # rebuilds image + applies infra
+./infra/scripts/deploy.sh --skip-build     # infra-only change, re-uses current image
 ```
 
-For an infra-only change (no code changed):
-
-```bash
-./infra/scripts/deploy.sh --skip-build
-```
+No webhook URL changes, no GitHub App changes, no service interruption beyond a rolling container restart.
 
 ---
 
@@ -348,7 +371,7 @@ curl http://localhost:8000/health
 
 **Azure:**
 ```bash
-curl https://<api-fqdn>/health
+curl https://ca-pr-reviewer-api.blackmoss-99d6e960.eastus.azurecontainerapps.io/health
 ```
 
 ### Viewing logs (Azure)

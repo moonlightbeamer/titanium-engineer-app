@@ -11,16 +11,22 @@ terraform {
     }
   }
 
-  backend "azurerm" {
-    resource_group_name  = "titanium-team-03-rg"
-    storage_account_name = "sttfstateprreviewer"   # created by infra/scripts/bootstrap-state.sh
-    container_name       = "tfstate"
-    key                  = "pr-reviewer.tfstate"
-  }
+  # Remote backend temporarily disabled — network policy on Titanium Engineering subscription
+  # blocks data-plane access to sttfstateprreviewer. Using local state until resolved.
+  # To migrate back: restore the azurerm block and run: terraform init -migrate-state
+  # backend "azurerm" {
+  #   resource_group_name  = "titanium-team-03-rg"
+  #   storage_account_name = "sttfstateprreviewer"
+  #   container_name       = "tfstate"
+  #   key                  = "pr-reviewer.tfstate"
+  # }
+
+  backend "local" {}
 }
 
 provider "azurerm" {
   features {}
+  skip_provider_registration = true
 }
 
 data "azurerm_resource_group" "main" {
@@ -39,11 +45,6 @@ resource "azurerm_user_assigned_identity" "acr_pull" {
   location            = data.azurerm_resource_group.main.location
 }
 
-resource "azurerm_role_assignment" "acr_pull" {
-  scope                = data.azurerm_container_registry.acr.id
-  role_definition_name = "AcrPull"
-  principal_id         = azurerm_user_assigned_identity.acr_pull.principal_id
-}
 
 resource "azurerm_log_analytics_workspace" "main" {
   name                = "log-${local.prefix}"

@@ -60,23 +60,15 @@ variable "github_webhook_secret" {
   sensitive   = true
 }
 
-variable "azure_openai_api_key" {
-  type      = string
-  sensitive = true
-}
-
-variable "azure_openai_endpoint" {
-  description = "Azure OpenAI endpoint URL (e.g. https://resource.openai.azure.com)"
+variable "acr_admin_password" {
+  description = "ACR admin password (used instead of managed identity for image pull)"
   type        = string
-  validation {
-    condition     = startswith(var.azure_openai_endpoint, "https://")
-    error_message = "azure_openai_endpoint must use HTTPS."
-  }
+  sensitive   = true
 }
 
 variable "azure_openai_deployment_name" {
   type    = string
-  default = "gpt-5.1"
+  default = "gpt-4o"
 }
 
 variable "azure_openai_api_version" {

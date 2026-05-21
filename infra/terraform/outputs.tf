@@ -37,3 +37,8 @@ output "acr_login_server" {
   description = "ACR login server for docker push"
   value       = data.azurerm_container_registry.acr.login_server
 }
+
+output "openai_endpoint" {
+  description = "Azure OpenAI endpoint (network-ACL restricted to ACA outbound IP)"
+  value       = azurerm_cognitive_account.openai.endpoint
+}

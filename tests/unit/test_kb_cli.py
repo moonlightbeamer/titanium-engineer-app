@@ -295,3 +295,19 @@ def test_bootstrap_seeds_min_cve_and_guidelines(engine):
         ).scalar()
     assert cve_count >= 5
     assert guidelines_count >= 1
+
+
+@pytest.mark.unit
+def test_bootstrap_is_idempotent(engine):
+    """Running kb bootstrap twice must not duplicate entries."""
+    _invoke(engine, ["bootstrap"])
+    result = _invoke(engine, ["bootstrap"])
+
+    assert result.exit_code == 0
+    assert "skipped" in result.output
+    with engine.connect() as conn:
+        total = conn.execute(
+            text("SELECT COUNT(*) FROM knowledge_base_entries")
+        ).scalar()
+    # First run inserts 6; second run must insert 0 new rows
+    assert total == 6

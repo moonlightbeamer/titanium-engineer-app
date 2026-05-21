@@ -9,6 +9,7 @@ COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
 
 # Copy application source
+COPY README.md .
 COPY pr_reviewer/ pr_reviewer/
 COPY alembic/ alembic/
 COPY alembic.ini .

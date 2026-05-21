@@ -6,6 +6,13 @@ resource "azurerm_container_app" "otel_collector" {
   container_app_environment_id = azurerm_container_app_environment.main.id
   revision_mode                = "Single"
 
+  # Config is passed as an env var to avoid the azurerm v3 data-plane restriction
+  # on Azure Files. The collector reads it via --config=env:OTEL_COLLECTOR_CONFIG_YAML.
+  secret {
+    name  = "otel-config-yaml"
+    value = file("${path.module}/../../otel/collector-config.yml")
+  }
+
   template {
     min_replicas = 1
     max_replicas = 1
@@ -15,33 +22,26 @@ resource "azurerm_container_app" "otel_collector" {
       image  = "otel/opentelemetry-collector-contrib:latest"
       cpu    = 0.25
       memory = "0.5Gi"
-      args   = ["--config=/etc/otel/config.yml"]
+      args   = ["--config=env:OTEL_COLLECTOR_CONFIG_YAML"]
 
-      volume_mounts {
-        name = "otel-config"
-        path = "/etc/otel"
+      env {
+        name        = "OTEL_COLLECTOR_CONFIG_YAML"
+        secret_name = "otel-config-yaml"
       }
-    }
-
-    volume {
-      name         = "otel-config"
-      storage_name = azurerm_container_app_environment_storage.otel.name
-      storage_type = "AzureFile"
     }
   }
 
   # Internal only — app containers send OTLP/HTTP on port 4318; ACA proxies 80 → 4318
   ingress {
-    external_enabled = false
-    target_port      = 4318
-    transport        = "http"
+    external_enabled          = false
+    allow_insecure_connections = true
+    target_port               = 4318
+    transport                 = "http"
     traffic_weight {
       latest_revision = true
       percentage      = 100
     }
   }
-
-  depends_on = [azurerm_storage_share_file.otel_config]
 }
 
 resource "azurerm_container_app_environment" "main" {
@@ -49,6 +49,15 @@ resource "azurerm_container_app_environment" "main" {
   resource_group_name        = data.azurerm_resource_group.main.name
   location                   = local.location
   log_analytics_workspace_id = azurerm_log_analytics_workspace.main.id
+
+  # VNet integration gives containers a routable path to the Azure OpenAI
+  # private endpoint. External ingress (webhook) remains internet-facing.
+  infrastructure_subnet_id = azurerm_subnet.aca_infra.id
+
+  lifecycle {
+    prevent_destroy = true
+    ignore_changes  = [infrastructure_resource_group_name]
+  }
 }
 
 # ── ChromaDB (internal only, Azure File mount for persistence) ────────────────
@@ -71,30 +80,20 @@ resource "azurerm_container_app" "chromadb" {
 
       env {
         name  = "IS_PERSISTENT"
-        value = "TRUE"
+        value = "FALSE"
       }
       env {
         name  = "ANONYMIZED_TELEMETRY"
         value = "FALSE"
       }
-
-      volume_mounts {
-        name = "chromadb-data"
-        path = "/chroma/chroma"
-      }
-    }
-
-    volume {
-      name         = "chromadb-data"
-      storage_name = azurerm_container_app_environment_storage.chroma.name
-      storage_type = "AzureFile"
     }
   }
 
   ingress {
-    external_enabled = false
-    target_port      = 8000
-    transport        = "http"
+    external_enabled           = false
+    allow_insecure_connections = true
+    target_port                = 8000
+    transport                  = "http"
     traffic_weight {
       latest_revision = true
       percentage      = 100
@@ -119,9 +118,15 @@ resource "azurerm_container_app" "api" {
     identity_ids = [azurerm_user_assigned_identity.acr_pull.id]
   }
 
+  secret {
+    name  = "acr-password"
+    value = var.acr_admin_password
+  }
+
   registry {
-    server   = "${var.acr_name}.azurecr.io"
-    identity = azurerm_user_assigned_identity.acr_pull.id
+    server               = "${var.acr_name}.azurecr.io"
+    username             = var.acr_name
+    password_secret_name = "acr-password"
   }
 
   secret {
@@ -138,7 +143,7 @@ resource "azurerm_container_app" "api" {
   }
   secret {
     name  = "azure-openai-api-key"
-    value = var.azure_openai_api_key
+    value = azurerm_cognitive_account.openai.primary_access_key
   }
   secret {
     name  = "github-app-id"
@@ -178,7 +183,7 @@ resource "azurerm_container_app" "api" {
       }
       env {
         name  = "AZURE_OPENAI_ENDPOINT"
-        value = var.azure_openai_endpoint
+        value = azurerm_cognitive_account.openai.endpoint
       }
       env {
         name  = "AZURE_OPENAI_DEPLOYMENT_NAME"
@@ -249,9 +254,15 @@ resource "azurerm_container_app" "worker_review" {
     identity_ids = [azurerm_user_assigned_identity.acr_pull.id]
   }
 
+  secret {
+    name  = "acr-password"
+    value = var.acr_admin_password
+  }
+
   registry {
-    server   = "${var.acr_name}.azurecr.io"
-    identity = azurerm_user_assigned_identity.acr_pull.id
+    server               = "${var.acr_name}.azurecr.io"
+    username             = var.acr_name
+    password_secret_name = "acr-password"
   }
 
   secret {
@@ -268,7 +279,7 @@ resource "azurerm_container_app" "worker_review" {
   }
   secret {
     name  = "azure-openai-api-key"
-    value = var.azure_openai_api_key
+    value = azurerm_cognitive_account.openai.primary_access_key
   }
   secret {
     name  = "github-app-id"
@@ -308,7 +319,7 @@ resource "azurerm_container_app" "worker_review" {
       }
       env {
         name  = "AZURE_OPENAI_ENDPOINT"
-        value = var.azure_openai_endpoint
+        value = azurerm_cognitive_account.openai.endpoint
       }
       env {
         name  = "AZURE_OPENAI_DEPLOYMENT_NAME"
@@ -369,9 +380,15 @@ resource "azurerm_container_app" "worker_feedback" {
     identity_ids = [azurerm_user_assigned_identity.acr_pull.id]
   }
 
+  secret {
+    name  = "acr-password"
+    value = var.acr_admin_password
+  }
+
   registry {
-    server   = "${var.acr_name}.azurecr.io"
-    identity = azurerm_user_assigned_identity.acr_pull.id
+    server               = "${var.acr_name}.azurecr.io"
+    username             = var.acr_name
+    password_secret_name = "acr-password"
   }
 
   secret {
@@ -388,7 +405,7 @@ resource "azurerm_container_app" "worker_feedback" {
   }
   secret {
     name  = "azure-openai-api-key"
-    value = var.azure_openai_api_key
+    value = azurerm_cognitive_account.openai.primary_access_key
   }
   secret {
     name  = "github-app-id"
@@ -428,7 +445,7 @@ resource "azurerm_container_app" "worker_feedback" {
       }
       env {
         name  = "AZURE_OPENAI_ENDPOINT"
-        value = var.azure_openai_endpoint
+        value = azurerm_cognitive_account.openai.endpoint
       }
       env {
         name  = "AZURE_OPENAI_DEPLOYMENT_NAME"
@@ -489,9 +506,15 @@ resource "azurerm_container_app" "worker_indexer" {
     identity_ids = [azurerm_user_assigned_identity.acr_pull.id]
   }
 
+  secret {
+    name  = "acr-password"
+    value = var.acr_admin_password
+  }
+
   registry {
-    server   = "${var.acr_name}.azurecr.io"
-    identity = azurerm_user_assigned_identity.acr_pull.id
+    server               = "${var.acr_name}.azurecr.io"
+    username             = var.acr_name
+    password_secret_name = "acr-password"
   }
 
   secret {
@@ -508,7 +531,7 @@ resource "azurerm_container_app" "worker_indexer" {
   }
   secret {
     name  = "azure-openai-api-key"
-    value = var.azure_openai_api_key
+    value = azurerm_cognitive_account.openai.primary_access_key
   }
   secret {
     name  = "github-app-id"
@@ -548,7 +571,7 @@ resource "azurerm_container_app" "worker_indexer" {
       }
       env {
         name  = "AZURE_OPENAI_ENDPOINT"
-        value = var.azure_openai_endpoint
+        value = azurerm_cognitive_account.openai.endpoint
       }
       env {
         name  = "AZURE_OPENAI_DEPLOYMENT_NAME"
@@ -618,9 +641,15 @@ resource "azurerm_container_app_job" "kb_seed" {
     identity_ids = [azurerm_user_assigned_identity.acr_pull.id]
   }
 
+  secret {
+    name  = "acr-password"
+    value = var.acr_admin_password
+  }
+
   registry {
-    server   = "${var.acr_name}.azurecr.io"
-    identity = azurerm_user_assigned_identity.acr_pull.id
+    server               = "${var.acr_name}.azurecr.io"
+    username             = var.acr_name
+    password_secret_name = "acr-password"
   }
 
   secret {
@@ -637,7 +666,7 @@ resource "azurerm_container_app_job" "kb_seed" {
   }
   secret {
     name  = "azure-openai-api-key"
-    value = var.azure_openai_api_key
+    value = azurerm_cognitive_account.openai.primary_access_key
   }
   secret {
     name  = "github-app-id"
@@ -666,7 +695,7 @@ resource "azurerm_container_app_job" "kb_seed" {
       }
       env {
         name  = "AZURE_OPENAI_ENDPOINT"
-        value = var.azure_openai_endpoint
+        value = azurerm_cognitive_account.openai.endpoint
       }
       env {
         name  = "AZURE_OPENAI_DEPLOYMENT_NAME"
@@ -730,9 +759,15 @@ resource "azurerm_container_app" "beat" {
     identity_ids = [azurerm_user_assigned_identity.acr_pull.id]
   }
 
+  secret {
+    name  = "acr-password"
+    value = var.acr_admin_password
+  }
+
   registry {
-    server   = "${var.acr_name}.azurecr.io"
-    identity = azurerm_user_assigned_identity.acr_pull.id
+    server               = "${var.acr_name}.azurecr.io"
+    username             = var.acr_name
+    password_secret_name = "acr-password"
   }
 
   secret {
@@ -749,7 +784,7 @@ resource "azurerm_container_app" "beat" {
   }
   secret {
     name  = "azure-openai-api-key"
-    value = var.azure_openai_api_key
+    value = azurerm_cognitive_account.openai.primary_access_key
   }
   secret {
     name  = "github-app-id"
@@ -789,7 +824,7 @@ resource "azurerm_container_app" "beat" {
       }
       env {
         name  = "AZURE_OPENAI_ENDPOINT"
-        value = var.azure_openai_endpoint
+        value = azurerm_cognitive_account.openai.endpoint
       }
       env {
         name  = "AZURE_OPENAI_DEPLOYMENT_NAME"
