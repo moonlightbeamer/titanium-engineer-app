@@ -819,3 +819,61 @@ Two independent bugs meant OpenTelemetry was completely inactive in every deploy
 ---
 
 **Running totals:** 272 unit tests · 6 integration tests (require live Postgres) · 3 pre-existing OTel isolation failures · lint clean · 10 Terraform tests passing · tasks 32–34 complete
+
+---
+
+## 2026-05-21
+
+### Bug fixes — Azure Redis SSL (`rediss://` TLS)
+
+Two successive fixes were needed to establish a working TLS connection to Azure Cache for Redis. Azure Redis enforces SSL (`rediss://` scheme); redis-py 5.x has a validation path that rejects `ssl_cert_reqs=CERT_NONE` when passed as a URL query parameter.
+
+**Fix 1 — `ssl_cert_reqs=CERT_NONE` as kwarg (commit 39a0527)**
+- Celery's broker URL parser forwards `ssl_cert_reqs` from the `rediss://` query string to `SSLConnection.__init__` as the string `"CERT_NONE"`. redis-py 5.x validates this against the string literal `"none"` (lowercase), not the OpenSSL constant — raising `TypeError`.
+- Passed `ssl.CERT_NONE` (the int `0`) as an explicit kwarg to `redis.Redis.from_url()` in `celery_app.py`, `container.py`, and `indexer.py`.
+- This was insufficient alone because redis-py 5.x applies URL-parsed options **after** kwargs (Fix 2 addresses this).
+
+**Fix 2 — Strip `ssl_cert_reqs` from URL before `from_url()` (commit 648731b)**
+- redis-py 5.x option-merge order means the URL-parsed `ssl_cert_reqs` string overwrites the kwarg value, so the string validation still fires.
+- Extracted a shared `_make_redis_client(url)` helper that strips `ssl_cert_reqs` from the URL query string before calling `from_url()`, then passes `ssl.CERT_NONE` as a kwarg. Deduplicates identical logic across `celery_app.py`, `container.py`, and `indexer.py`.
+
+**Files modified:** `pr_reviewer/workers/celery_app.py`, `pr_reviewer/workers/container.py`, `pr_reviewer/workers/indexer.py`.
+
+---
+
+### First live Azure deployment — end-to-end confirmed
+
+Deployed to Azure Container Apps. PR #42 (`moonlightbeamer/kiro-example`) reviewed successfully.
+
+**Pipeline trace (from `ca-pr-reviewer-worker-review` logs):**
+- Webhook received → `POST /webhook/github 202 Accepted` (API)
+- KB retrieval: 6 ChromaDB queries, each preceded by an Azure OpenAI embedding call — all `200 OK`; ~600ms total
+- Diff sent to GPT-4o: 14,406 chars across 2 files (`titanium/README.md`, `titanium/titanium.js`)
+- LLM response time: ~23s; 24 findings parsed
+- GitHub review posted: `POST /pulls/42/reviews 200 OK`
+- Task succeeded in **31.3s** total
+
+**Observations:**
+- `tests/` directory 404 on `moonlightbeamer/kiro-example` — coverage check skipped (expected; no tests dir in that repo)
+- `worker-feedback` and `worker-indexer` show ~30s clock drift warning from `worker-review` — cosmetic, no functional impact
+- All supporting resources (Redis, PostgreSQL, ChromaDB, Azure OpenAI, GitHub API) confirmed reachable from ACA
+
+---
+
+### Bug fix — `kb bootstrap` non-idempotent (`pr_reviewer/kb/cli.py`)
+
+Each invocation of `kb bootstrap` inserted all 6 seed entries with fresh UUIDs regardless of existing content. Running `seed-kb` job twice would double the vectors in both PostgreSQL and ChromaDB, skewing retrieval scores.
+
+**Fix:** Added a `SELECT 1 ... LIMIT 1` existence check on `(corpus, content)` before each insert. Existing entries are skipped; the echo now reports `Bootstrapped N entries (M already present, skipped)`.
+
+**New test:** `test_bootstrap_is_idempotent` — runs `bootstrap` twice; asserts total row count stays at 6.
+
+**Files modified:** `pr_reviewer/kb/cli.py`, `tests/unit/test_kb_cli.py`.
+
+---
+
+### Diff limit raised: 10,000 → 100,000 lines (`pr_reviewer/components/diff_parser.py`)
+
+`_MAX_CHANGED_LINES` raised from 10,000 to 100,000 to support larger PRs. Note: at ~100K changed lines a dense diff may approach GPT-4o's 128K token context ceiling — if that occurs in practice, chunked LLM calls will be needed.
+
+**Files modified:** `pr_reviewer/components/diff_parser.py`.

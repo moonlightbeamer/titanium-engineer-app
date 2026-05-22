@@ -465,6 +465,13 @@ Implement an LLM-backed GitHub PR review service in phases: v1 delivers the comp
   - [x] 34.3 Fix `api/main.py` — `setup_telemetry("pr-reviewer-api")` was never called; OTel was entirely inactive in the API process; call it inside `build_app()` before the FastAPI instance is created
   - [x] 34.4 Fix `workers/celery_app.py` — add `worker_process_init` signal handler `_setup_worker_telemetry` that calls `setup_telemetry("pr-reviewer-worker")`; OTel was never initialised in any worker process
 
+- [x] 35. Bug fixes — Azure Redis SSL and post-deploy observations (2026-05-21)
+  - [x] 35.1 Fix `celery_app.py`, `container.py`, `indexer.py` — pass `ssl.CERT_NONE` as kwarg to `redis.Redis.from_url()` for `rediss://` URLs; redis-py 5.x rejects `"CERT_NONE"` string from URL query params
+  - [x] 35.2 Fix `container.py` (extracted `_make_redis_client` helper) — strip `ssl_cert_reqs` from URL before `from_url()` call; redis-py 5.x applies URL-parsed options after kwargs, overwriting the kwarg fix in 35.1; helper deduplicates logic across all three files
+  - [x] 35.3 First live Azure deployment confirmed — PR #42 reviewed end-to-end in 31.3s; 24 findings posted; all resources reachable (Redis, PostgreSQL, ChromaDB, Azure OpenAI, GitHub API)
+  - [x] 35.4 Fix `kb/cli.py` — `bootstrap` was non-idempotent; added `SELECT 1 ... LIMIT 1` existence check on `(corpus, content)` before each insert; re-running `seed-kb` now skips existing entries rather than creating duplicate vectors; added `test_bootstrap_is_idempotent`
+  - [x] 35.5 Fix `diff_parser.py` — raise `_MAX_CHANGED_LINES` from 10,000 → 100,000 to support larger PRs
+
 ## Notes
 
 - Tasks marked **[v2]** depend on all v1 tasks completing first; v2 may be deferred until the Feedback_Store has accumulated meaningful signal (3–6 months of reviews)
